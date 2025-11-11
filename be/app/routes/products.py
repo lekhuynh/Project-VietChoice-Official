@@ -4,10 +4,7 @@ import os
 import tempfile
 from app.models.products import Products
 from app.models.categories import Categories
-<<<<<<< HEAD:app/routes/products.py
 from ..services.risk_service import evaluate_risk
-=======
->>>>>>> 2f9890064320089f12e667da8fb012a1ebf81680:be/app/routes/products.py
 from ..database import get_db
 from ..services import crawler_tiki_service as tiki
 from ..services.product_service import filter_products_service
@@ -237,7 +234,6 @@ def recommend_best_products(product_id: int, limit: int = 5, db: Session = Depen
         raise HTTPException(404, "Không tìm thấy sản phẩm gợi ý phù hợp.")
     return products
 
-<<<<<<< HEAD:app/routes/products.py
 @router.get("/{product_id}/risk")
 def get_product_risk(product_id: int, db: Session = Depends(get_db)):
     product = db.query(Products).filter(Products.Product_ID == product_id).first()
@@ -253,7 +249,7 @@ def get_product_risk(product_id: int, db: Session = Depends(get_db)):
         "Risk_Level": risk["risk_level"],
         "Reasons": risk["reasons"]
     }
-=======
+
 # # =========================================================
 # # 9️⃣ LẤY SẢN PHẨM THEO DANH MỤC
 # # =========================================================
@@ -319,4 +315,3 @@ def get_product_risk(product_id: int, db: Session = Depends(get_db)):
 #         positive_over=positive_over,
 #         category_path=category_path
 #     )
->>>>>>> 2f9890064320089f12e667da8fb012a1ebf81680:be/app/routes/products.py
