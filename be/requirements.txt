@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pyodbc
+motor
+pydantic
+pydantic-settings
+python-dotenv
+passlib>=1.7.4
+python-jose[cryptography]
+email-validator
+requests
+numpy
+torch
+beautifulsoup4

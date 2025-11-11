@@ -1,0 +1,196 @@
+﻿import { API_BASE_URL } from '../config';
+
+// Product shapes aligned with backend, optional for flexibility
+export interface ProductDetail {
+  Product_ID: number;
+  Product_Name: string;
+  Image_URL?: string;
+  Price?: number;
+  Source?: string;
+  Description?: string;
+  Avg_Rating?: number;
+  Review_Count?: number;
+  Positive_Percent?: number;
+  Sentiment_Score?: number;
+  Sentiment_Label?: string;
+  Origin?: string;
+  Brand?: string;
+  Product_URL?: string;
+}
+
+export interface ProductMin {
+  Product_ID: number;
+  Product_Name: string;
+  Image_URL: string;
+  Price: number;
+  Avg_Rating: number;
+  Sentiment_Label: string;
+}
+
+export interface FavoriteProduct extends ProductMin {
+  Favorited_At: string;
+}
+
+export interface ProductRisk {
+  Product_ID: number;
+  Risk_Score: number; // 0..1
+  Risk_Level: string; // "Thấp" | "Trung bình" | "Cao"
+  Reasons: string[];
+}
+
+export interface ProductSearchResponse<T = ProductMin> {
+  input_type: 'text' | 'barcode' | 'image';
+  query: string;
+  count: number;
+  results: T[];
+}
+
+// Top rated (legacy helper)
+export const fetchTopRatedProducts = async (limit: number): Promise<ProductMin[]> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/products/recommend/best/1?limit=${limit}`);
+    if (!response.ok) return [];
+    return (await response.json()) as ProductMin[];
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.info('[fetchTopRatedProducts] network error:', err);
+    return [];
+  }
+};
+
+// Search products
+export const fetchSearchProducts = async (
+  query: string
+): Promise<{ products: ProductMin[]; total: number }> => {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/products/search?q=${encodeURIComponent(query)}`,
+      { credentials: 'include' }
+    );
+    if (!response.ok) {
+      throw new Error('Không thể tìm kiếm sản phẩm.');
+    }
+    const data = await response.json();
+    const items = (data?.results || []) as ProductMin[];
+    const total = (data?.count as number) ?? items.length;
+    return { products: items, total };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.info('[fetchSearchProducts] network error:', err);
+    throw new Error('Không thể kết nối tới dịch vụ tìm kiếm. Vui lòng thử lại sau.');
+  }
+};
+
+// Product detail
+export const fetchProductDetail = async (
+  productId: string | number
+): Promise<ProductDetail> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/products/${productId}`, {
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      throw new Error('Không tìm thấy sản phẩm.');
+    }
+    return (await response.json()) as ProductDetail;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.info('[fetchProductDetail] network error:', err);
+    throw new Error('Không thể kết nối tới dịch vụ sản phẩm. Vui lòng thử lại sau.');
+  }
+};
+
+export const fetchProductRisk = async (
+  productId: string | number
+): Promise<ProductRisk> => {
+  const res = await fetch(`${API_BASE_URL}/products/${productId}/risk`, { credentials: 'include' });
+  if (!res.ok) {
+    throw new Error('Không lấy được rủi ro sản phẩm.');
+  }
+  return (await res.json()) as ProductRisk;
+};
+
+export const fetchRecommendedForProduct = async (
+  productId: string | number,
+  limit = 6
+): Promise<ProductMin[]> => {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/products/recommend/best/${productId}?limit=${limit}`,
+      { credentials: 'include' }
+    );
+    if (!response.ok) return [];
+    return (await response.json()) as ProductMin[];
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.info('[fetchRecommendedForProduct] network error:', err);
+    return [];
+  }
+};
+
+export const fetchProductsByBarcode = async (
+  barcode: string
+): Promise<ProductMin[]> => {
+  const res = await fetch(`${API_BASE_URL}/products/barcode/${encodeURIComponent(barcode)}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error('Không lấy được sản phẩm theo mã vạch.');
+  }
+  const data = (await res.json()) as ProductSearchResponse<ProductMin>;
+  return (data?.results ?? []) as ProductMin[];
+};
+
+export const scanProductsByImage = async (
+  file: File
+): Promise<ProductMin[]> => {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_BASE_URL}/products/scan/image`, {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error('Không nhận diện được ảnh sản phẩm.');
+  }
+  const data = (await res.json()) as ProductSearchResponse<ProductMin>;
+  return (data?.results ?? []) as ProductMin[];
+};
+
+// Favorites
+export const fetchFavorites = async (): Promise<FavoriteProduct[]> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/favorite/list`, { credentials: 'include' });
+    if (!response.ok) {
+      if (response.status === 401) throw new Error('Unauthenticated');
+      throw new Error('Lỗi khi tải danh sách yêu thích.');
+    }
+    const data = await response.json();
+    return (data?.favorites as FavoriteProduct[]) || [];
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.info('[fetchFavorites] network error:', err);
+    return [];
+  }
+};
+
+export const addFavorite = async (productId: number): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/favorite/add/${productId}`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Thêm vào danh sách yêu thích thất bại.');
+  }
+};
+
+export const removeFavorite = async (productId: number): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/favorite/remove/${productId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Xóa khỏi danh sách yêu thích thất bại.');
+  }
+};
