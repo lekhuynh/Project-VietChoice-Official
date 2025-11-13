@@ -13,3 +13,8 @@ requests
 numpy
 torch
 beautifulsoup4
+requests
+python-dotenv
+aiohttp
+pyzbar
+Pillow

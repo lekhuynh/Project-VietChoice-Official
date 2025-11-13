@@ -1,0 +1,224 @@
+import { type FC, useEffect, useRef, useState } from 'react';
+import { CameraIcon, XIcon, Loader2Icon, RotateCcwIcon, PlayIcon, PauseIcon, RefreshCwIcon } from 'lucide-react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Link } from 'react-router-dom';
+import { type Product } from '../../types';
+import { fetchProductsByBarcode, type ProductMin } from '../../api/products';
+
+const formatPrice = (v?: number) => {
+  if (v === undefined || v === null) return '';
+  try {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(
+      Number(v)
+    );
+  } catch {
+    return `${v} ₫`;
+  }
+};
+
+const BarcodeScanner: FC = () => {
+  const [scanResult, setScanResult] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const scannerRef = useRef<any>(null);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+
+  const toUiProduct = (p: ProductMin): Product => ({
+    id: p.Product_ID,
+    name: p.Product_Name,
+    image: p.Image_URL || '',
+    price: formatPrice(typeof p.Price === 'number' ? p.Price : Number((p as any).Price ?? 0)),
+    rating: typeof p.Avg_Rating === 'number' ? p.Avg_Rating : 0,
+    positivePercent: 0,
+    sentiment: (p.Sentiment_Label?.toLowerCase() as Product['sentiment']) || undefined,
+    brand: (p as any).Brand,
+    origin: (p as any).Origin,
+  });
+
+  const startScanner = async () => {
+    setScanResult(null);
+    setProducts([]);
+    setCapturedImage(null);
+    if (!scannerRef.current) {
+      scannerRef.current = new Html5Qrcode('qr-reader');
+    }
+    const onScanSuccess = async (decodedText: string) => {
+      // prevent duplicate rapid fires
+      if (scanResult) return;
+      setScanResult(decodedText);
+      try {
+        // freeze the last frame
+        await scannerRef.current.pause(true);
+        // capture current video frame to show preview
+        const video: HTMLVideoElement | null = document.querySelector('#qr-reader video');
+        if (video && video.videoWidth && video.videoHeight) {
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/png');
+            setCapturedImage(dataUrl);
+          }
+        }
+      } catch (_) {}
+      setIsScanning(false);
+      setIsLoading(true);
+      try {
+        const results = await fetchProductsByBarcode(decodedText);
+        setProducts(results.map(toUiProduct));
+      } catch (e) {
+        setProducts([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    const onScanFailure = (_: string) => {
+      // ignore frequent decode errors
+    };
+    try {
+      await scannerRef.current.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: 250,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.QR_CODE,
+          ],
+        },
+        onScanSuccess,
+        onScanFailure
+      );
+      setIsScanning(true);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to start camera', e);
+      setIsScanning(false);
+    }
+  };
+
+  const stopScanner = async () => {
+    try {
+      if (scannerRef.current?.getState && scannerRef.current.getState() !== 0) {
+        await scannerRef.current.stop();
+      }
+    } catch (_) {}
+    try {
+      await scannerRef.current?.clear?.();
+    } catch (_) {}
+    setIsScanning(false);
+  };
+
+  const resumeScanner = async () => {
+    try {
+      await scannerRef.current?.resume?.();
+      setScanResult(null);
+      setCapturedImage(null);
+      setProducts([]);
+      setIsScanning(true);
+    } catch (_) {
+      // If resume fails (stopped), start again
+      await startScanner();
+    }
+  };
+
+  useEffect(() => {
+    if (!isScanning) return;
+    return () => {
+      // cleanup handled by stopScanner when leaving page elsewhere if needed
+    };
+  }, [isScanning]);
+
+  return (
+    <div className="flex flex-col items-center">
+      {!isScanning && !scanResult && (
+        <div className="text-center mb-6">
+          <p className="text-gray-600 mb-4">Quét mã vạch để tìm sản phẩm nhanh chóng</p>
+          <button onClick={startScanner} className="bg-emerald-600 text-white px-4 py-2 rounded-md flex items-center justify-center">
+            <CameraIcon className="w-5 h-5 mr-2" />
+            Bắt đầu quét
+          </button>
+        </div>
+      )}
+
+      {isScanning && (
+        <div className="w-full max-w-md">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-medium">Đưa mã vạch vào khung hình</h3>
+            <div className="flex items-center gap-2">
+              <button onClick={resumeScanner} title="Tiếp tục" className="text-gray-500 hover:text-gray-700">
+                <PlayIcon className="w-5 h-5" />
+              </button>
+              <button onClick={stopScanner} title="Dừng" className="text-gray-500 hover:text-gray-700">
+                <XIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+          <div id="qr-reader" className="w-full"></div>
+        </div>
+      )}
+
+      {scanResult && (
+        <div className="w-full max-w-md mt-4">
+          <div className="bg-gray-100 p-4 rounded-md">
+            <h3 className="font-medium mb-2">Kết quả quét:</h3>
+            <p className="text-gray-700 font-mono bg-white p-2 rounded border border-gray-200">{scanResult}</p>
+            {capturedImage && (
+              <div className="mt-3">
+                <img src={capturedImage} alt="Khung hình đã chụp" className="w-full rounded border" />
+              </div>
+            )}
+            <div className="mt-3 flex gap-2">
+              <button onClick={resumeScanner} className="px-3 py-1 text-sm bg-emerald-600 text-white rounded flex items-center gap-1">
+                <RefreshCwIcon className="w-4 h-4" /> Quét lại
+              </button>
+              <button onClick={stopScanner} className="px-3 py-1 text-sm bg-gray-200 text-gray-800 rounded">Đóng camera</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="flex items-center justify-center mt-6">
+          <Loader2Icon className="animate-spin h-6 w-6 mr-2 text-emerald-600" />
+          <span>Đang tìm thông tin sản phẩm...</span>
+        </div>
+      )}
+
+      {products.length > 0 && (
+        <div className="w-full max-w-md mt-6">
+          <h3 className="font-medium mb-3">Sản phẩm tìm thấy:</h3>
+          <div className="space-y-4">
+            {products.map((product) => (
+              <Link key={product.id} to={`/product/${product.id}`} className="block bg-white rounded-lg shadow p-3">
+                <div className="flex">
+                  <img src={product.image} alt={product.name} className="w-16 h-16 object-cover rounded" />
+                  <div className="ml-3">
+                    <h4 className="font-medium hover:text-emerald-600">{product.name}</h4>
+                    <p className="text-emerald-600">{product.price}</p>
+                    <div className="flex items-center mt-1 text-sm">
+                      <span className="ml-1">{product.rating}/5</span>
+                      {product.brand && <span className="mx-2">•</span>}
+                      {product.brand && <span>{product.brand}</span>}
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+export default BarcodeScanner;
+

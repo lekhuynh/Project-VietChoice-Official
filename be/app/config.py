@@ -30,6 +30,9 @@ class Settings(BaseSettings):
 
     ACCESS_TOKEN_COOKIE_NAME: str
 
+    # External services
+    GEMINI_API_KEY: str | None = None
+
     @property
     def SQLSERVER_URL(self) -> str:
         user = quote_plus(self.db_user)

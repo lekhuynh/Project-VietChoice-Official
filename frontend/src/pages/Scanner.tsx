@@ -1,19 +1,43 @@
-import React, { useState } from 'react';
-import BarcodeScanner from '../components/scanner/BarcodeScanner';
-import ImageUploader from '../components/scanner/ImageUploader';
-import { BarcodeIcon, ImageIcon } from 'lucide-react';
+﻿import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import BarcodeScanner from "../components/scanner/BarcodeScanner";
+import ImageUploader from "../components/scanner/ImageUploader";
+import { BarcodeIcon, ImageIcon } from "lucide-react";
+
 /**
  * Scanner page
  *
  * Trang chứa hai tab chính:
- * - Quét mã vạch: sử dụng `BarcodeScanner` để quét bằng camera
- * - Quét ảnh chữ (OCR): sử dụng `ImageUploader` để upload ảnh và nhận dạng ký tự
+ * - Quét mã vạch: dùng `BarcodeScanner` để quét bằng camera
+ * - Quét ảnh (OCR): dùng `ImageUploader` để upload ảnh và nhận dạng ký tự
  *
- * Chú ý: cả hai component hiện đang sử dụng mock/demo data. Khi tích hợp API,
- * chuyển các mock call thành fetch/axios và xử lý quyền camera, lỗi và trạng thái loading.
+ * Lưu ý: cần cấp quyền camera khi quét mã vạch. Ảnh sẽ tự xử lý khi tải lên ở tab OCR.
  */
 const Scanner = () => {
-  const [activeTab, setActiveTab] = useState('barcode');
+  const TAB_KEY = "vc_scanner_tab_v1";
+  const [activeTab, setActiveTab] = useState<'barcode' | 'image'>(() => {
+    try {
+      const raw = localStorage.getItem(TAB_KEY);
+      if (raw === "barcode" || raw === "image") return raw;
+    } catch {}
+    return "image";
+  });
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TAB_KEY, activeTab);
+    } catch {}
+  }, [activeTab]);
+
+  // Allow tab override via query param (?tab=image|barcode)
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'image' || tab === 'barcode') {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
   return (
     <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-lg p-6">
       <h1 className="text-2xl font-bold text-center mb-6">Quét mã sản phẩm</h1>
@@ -30,7 +54,7 @@ const Scanner = () => {
           onClick={() => setActiveTab('image')}
         >
           <ImageIcon className="w-5 h-5 mr-2" />
-          Quét ảnh chữ (OCR)
+          Quét ảnh (OCR)
         </button>
       </div>
       <div className="mt-6">{activeTab === 'barcode' ? <BarcodeScanner /> : <ImageUploader />}</div>

@@ -1,15 +1,17 @@
-import { useEffect, useState, useRef, type KeyboardEvent } from 'react';
+﻿import { useEffect, useState, useRef, type KeyboardEvent } from 'react';
 import { SendIcon, ImageIcon, BarcodeIcon, Loader2Icon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import ChatBubble from './ChatBubble';
 import { type Message, type Product } from '../../types';
 import { fetchSearchProducts, type ProductMin } from '../../api/products';
 
 const ChatInterface = () => {
+  const STORAGE_KEY = 'vc_chat_state_v1';
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 1,
       content:
-        'Xin chào! Mình là trợ lý VietChoice. Bạn có thể nhập tên sản phẩm, quét mã vạch hoặc tải lên hình ảnh để tra cứu thông tin sản phẩm.',
+        'Xin chÃ o! MÃ¬nh lÃ  trá»£ lÃ½ VietChoice. Báº¡n cÃ³ thá»ƒ nháº­p tÃªn sáº£n pháº©m, quÃ©t mÃ£ váº¡ch hoáº·c táº£i lÃªn hÃ¬nh áº£nh Ä‘á»ƒ tra cá»©u thÃ´ng tin sáº£n pháº©m.',
       sender: 'bot',
       timestamp: new Date(),
     },
@@ -19,6 +21,7 @@ const ChatInterface = () => {
 
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const navigate = useNavigate();
   const scrollToBottom = () => {
     const el = messagesContainerRef.current;
     if (!el) return;
@@ -28,8 +31,46 @@ const ChatInterface = () => {
     scrollToBottom();
   }, [messages]);
 
+  // Load persisted chat state on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { input?: string; messages?: Message[] };
+        if (typeof parsed.input === 'string') {
+          setInput(parsed.input);
+        }
+        if (Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+          setMessages(
+            parsed.messages.map((m, idx) => ({
+              ...m,
+              id: m.id ?? idx + 1,
+              timestamp: m.timestamp ?? new Date(),
+            }))
+          );
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+    inputRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist chat state whenever input or messages change
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ input, messages })
+      );
+    } catch {
+      // ignore storage quota
+    }
+  }, [input, messages]);
+
   const mapToUiProduct = (p: ProductMin): Product => {
-    const priceStr = typeof p.Price === 'number' ? `${p.Price.toLocaleString('vi-VN')}₫` : String((p as any).Price ?? '');
+    const priceStr = typeof p.Price === 'number' ? `${p.Price.toLocaleString('vi-VN')}â‚«` : String((p as any).Price ?? '');
     const pos = (p as any).Positive_Percent as number | undefined;
     const sentiment = typeof pos === 'number' ? (pos >= 75 ? 'positive' : pos >= 40 ? 'neutral' : 'negative') : undefined;
     return {
@@ -59,7 +100,7 @@ const ChatInterface = () => {
       const suggestions: Product[] = products.map(mapToUiProduct);
       const botResponse: Message = {
         id: messages.length + 2,
-        content: 'Mình đã tìm thấy một số sản phẩm phù hợp với yêu cầu của bạn:',
+        content: 'MÃ¬nh Ä‘Ã£ tÃ¬m tháº¥y má»™t sá»‘ sáº£n pháº©m phÃ¹ há»£p vá»›i yÃªu cáº§u cá»§a báº¡n:',
         sender: 'bot',
         timestamp: new Date(),
         suggestions,
@@ -68,7 +109,7 @@ const ChatInterface = () => {
     } catch {
       const botResponse: Message = {
         id: messages.length + 2,
-        content: 'Xin lỗi, hiện không thể tìm kiếm. Vui lòng thử lại sau.',
+        content: 'Xin lá»—i, hiá»‡n khÃ´ng thá»ƒ tÃ¬m kiáº¿m. Vui lÃ²ng thá»­ láº¡i sau.',
         sender: 'bot',
         timestamp: new Date(),
       };
@@ -87,10 +128,11 @@ const ChatInterface = () => {
   };
 
   const handleImageUpload = () => {
-    alert('Tính năng tải lên hình ảnh sẽ được triển khai sau!');
+    try { localStorage.setItem('vc_scanner_tab_v1', 'image'); } catch {}
+    navigate('/scanner?tab=image');
   };
   const handleBarcodeScanner = () => {
-    window.location.href = '/scanner';
+    navigate('/scanner');
   };
 
   return (
@@ -102,7 +144,7 @@ const ChatInterface = () => {
         {isLoading && (
           <div className="flex items-center justify-center p-4">
             <Loader2Icon className="animate-spin h-5 w-5 mr-2 text-emerald-600" />
-            <span className="text-gray-600">Đang tìm kiếm...</span>
+            <span className="text-gray-600">Äang tÃ¬m kiáº¿m...</span>
           </div>
         )}
       </div>
@@ -112,14 +154,14 @@ const ChatInterface = () => {
           <button
             onClick={handleBarcodeScanner}
             className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full"
-            title="Quét mã vạch"
+            title="QuÃ©t mÃ£ váº¡ch"
           >
             <BarcodeIcon className="h-5 w-5" />
           </button>
           <button
             onClick={handleImageUpload}
             className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full"
-            title="Tải lên hình ảnh"
+            title="Táº£i lÃªn hÃ¬nh áº£nh"
           >
             <ImageIcon className="h-5 w-5" />
           </button>
@@ -128,7 +170,7 @@ const ChatInterface = () => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Nhập tên sản phẩm bạn muốn tìm..."
+            placeholder="Nháº­p tÃªn sáº£n pháº©m báº¡n muá»‘n tÃ¬m..."
             className="flex-grow border border-gray-300 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             ref={inputRef}
           />
@@ -146,3 +188,5 @@ const ChatInterface = () => {
 };
 
 export default ChatInterface;
+
+

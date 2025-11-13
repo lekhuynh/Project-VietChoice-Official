@@ -1,9 +1,13 @@
-﻿import { type FC, useState, useRef } from 'react';
+import { type FC, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { UploadIcon, ImageIcon, XIcon, Loader2Icon } from 'lucide-react';
 import { type Product } from '../../types';
 import { scanProductsByImage, type ProductMin } from '../../api/products';
 
-const currency = (v?: number) => (typeof v === 'number' ? v.toLocaleString('vi-VN') + ' ₫' : '');
+const currency = (v?: number) =>
+  typeof v === 'number'
+    ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(v)
+    : '';
 
 const ImageUploader: FC = () => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -12,6 +16,7 @@ const ImageUploader: FC = () => {
   const [ocrResult, setOcrResult] = useState<string | null>(null);
   const [suggestedProducts, setSuggestedProducts] = useState<Product[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -54,18 +59,32 @@ const ImageUploader: FC = () => {
     if (!selectedImage) return;
     setIsLoading(true);
     try {
-      const results = await scanProductsByImage(selectedImage);
+      const raw = (await scanProductsByImage(selectedImage)) as unknown as any[];
       const toUi = (p: ProductMin): Product => ({
-        id: p.Product_ID,
-        name: p.Product_Name,
-        image: p.Image_URL || '',
-        price: currency(typeof p.Price === 'number' ? p.Price : Number((p as any).Price ?? 0)),
-        rating: typeof p.Avg_Rating === 'number' ? p.Avg_Rating : 0,
+        id: (p as any).Product_ID,
+        name: (p as any).Product_Name,
+        image: (p as any).Image_URL || '',
+        price: currency(typeof (p as any).Price === 'number' ? (p as any).Price : Number((p as any).Price ?? 0)),
+        rating: typeof (p as any).Avg_Rating === 'number' ? (p as any).Avg_Rating : 0,
         positivePercent: 0,
-        sentiment: (p.Sentiment_Label?.toLowerCase() as Product['sentiment']) || undefined,
+        sentiment: ((p as any).Sentiment_Label?.toLowerCase() as Product['sentiment']) || undefined,
       });
-      setSuggestedProducts(results.map(toUi));
-      setOcrResult('Đã nhận diện xong');
+      const products = (raw || []).filter((r: any) => r && (r.Product_ID || r.Product_Name));
+      const message = (raw || []).find((r: any) => r && typeof r.message === 'string')?.message as string | undefined;
+      if (products.length > 0) {
+        const mapped = products.map(toUi);
+        setSuggestedProducts(mapped);
+        setOcrResult('Đã nhận diện xong');
+        if (mapped.length === 1) {
+          navigate(`/product/${mapped[0].id}`);
+        }
+      } else if (message) {
+        setSuggestedProducts([]);
+        setOcrResult(message);
+      } else {
+        setSuggestedProducts([]);
+        setOcrResult('Không nhận diện được nội dung trong ảnh. Vui lòng chụp rõ hơn hoặc dùng Quét mã vạch.');
+      }
     } catch {
       setOcrResult('Không nhận diện được ảnh');
       setSuggestedProducts([]);
@@ -74,49 +93,62 @@ const ImageUploader: FC = () => {
     }
   };
 
+  // Tự động xử lý ngay sau khi chọn ảnh
+  useEffect(() => {
+    if (selectedImage) {
+      const id = window.setTimeout(() => {
+        void processImage();
+      }, 0);
+      return () => window.clearTimeout(id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedImage]);
+
   return (
     <div className="flex flex-col items-center">
-      <div
-        className={`w-full max-w-md border-2 border-dashed rounded-lg p-6 text-center ${previewUrl ? 'border-emerald-300' : 'border-gray-300'}`}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-      >
-        {!previewUrl ? (
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <ImageIcon className="h-12 w-12 text-gray-400" />
+      {!ocrResult && (
+        <div
+          className={`w-full max-w-md border-2 border-dashed rounded-lg p-6 text-center ${previewUrl ? 'border-emerald-300' : 'border-gray-300'}`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+        >
+          {!previewUrl ? (
+            <div className="space-y-4">
+              <div className="flex justify-center">
+                <ImageIcon className="h-12 w-12 text-gray-400" />
+              </div>
+              <div className="text-gray-600">
+                <p className="text-sm">Kéo và thả ảnh vào đây hoặc</p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg, image/png"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                  id="image-upload"
+                />
+                <label
+                  htmlFor="image-upload"
+                  className="mt-2 inline-block px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-md cursor-pointer hover:bg-emerald-700"
+                >
+                  Chọn ảnh
+                </label>
+              </div>
+              <p className="text-xs text-gray-500">Chấp nhận định dạng JPG, PNG</p>
             </div>
-            <div className="text-gray-600">
-              <p className="text-sm">Kéo và thả ảnh vào đây hoặc</p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg, image/png"
-                onChange={handleImageSelect}
-                className="hidden"
-                id="image-upload"
-              />
-              <label
-                htmlFor="image-upload"
-                className="mt-2 inline-block px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-md cursor-pointer hover:bg-emerald-700"
+          ) : (
+            <div className="relative">
+              <img src={previewUrl} alt="Preview" className="max-h-64 mx-auto rounded" />
+              <button
+                onClick={resetImage}
+                className="absolute top-2 right-2 bg-gray-800 bg-opacity-50 text-white rounded-full p-1 hover:bg-opacity-70"
               >
-                Chọn ảnh
-              </label>
+                <XIcon className="h-4 w-4" />
+              </button>
             </div>
-            <p className="text-xs text-gray-500">Chấp nhận định dạng JPG, PNG</p>
-          </div>
-        ) : (
-          <div className="relative">
-            <img src={previewUrl} alt="Preview" className="max-h-64 mx-auto rounded" />
-            <button
-              onClick={resetImage}
-              className="absolute top-2 right-2 bg-gray-800 bg-opacity-50 text-white rounded-full p-1 hover:bg-opacity-70"
-            >
-              <XIcon className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {previewUrl && !ocrResult && (
         <button onClick={processImage} className="mt-4 px-4 py-2 bg-emerald-600 text-white rounded-md flex items-center" disabled={isLoading}>
@@ -145,18 +177,20 @@ const ImageUploader: FC = () => {
               <h3 className="font-medium mb-3">Sản phẩm gợi ý:</h3>
               <div className="space-y-4">
                 {suggestedProducts.map((product) => (
-                  <div key={product.id} className="bg-white rounded-lg shadow p-3 flex">
-                    <img src={product.image} alt={product.name} className="w-16 h-16 object-cover rounded" />
-                    <div className="ml-3">
-                      <h4 className="font-medium">{product.name}</h4>
-                      <p className="text-emerald-600">{product.price}</p>
-                      <div className="flex items-center mt-1 text-sm">
-                        <span className="ml-1">{product.rating}/5</span>
-                        <span className="mx-2">·</span>
-                        <span>{product.positivePercent}% tích cực</span>
+                  <Link key={product.id} to={`/product/${product.id}`} className="block bg-white rounded-lg shadow p-3">
+                    <div className="flex">
+                      <img src={product.image} alt={product.name} className="w-16 h-16 object-cover rounded" />
+                      <div className="ml-3">
+                        <h4 className="font-medium hover:text-emerald-600">{product.name}</h4>
+                        <p className="text-emerald-600">{product.price}</p>
+                        <div className="flex items-center mt-1 text-sm">
+                          <span className="ml-1">{product.rating}/5</span>
+                          <span className="mx-2">•</span>
+                          <span>{product.positivePercent}% tích cực</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
@@ -167,3 +201,4 @@ const ImageUploader: FC = () => {
   );
 };
 export default ImageUploader;
+

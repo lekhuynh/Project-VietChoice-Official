@@ -1,0 +1,27 @@
+        <div className="w-full max-w-md mt-6">
+          <h3 className="font-medium mb-3">Sản phẩm tìm thấy:</h3>
+          <div className="space-y-4">
+            {products.map((product) => (
+              <Link key={product.id} to={`/product/${product.id}`} className="block bg-white rounded-lg shadow p-3">
+                <div className="flex">
+                  <img src={product.image} alt={product.name} className="w-16 h-16 object-cover rounded" />
+                  <div className="ml-3">
+                    <h4 className="font-medium hover:text-emerald-600">{product.name}</h4>
+                    <p className="text-emerald-600">{product.price}</p>
+                    <div className="flex items-center mt-1 text-sm">
+                      <span className="ml-1">{product.rating}/5</span>
+                      {product.brand && <span className="mx-2">•</span>}
+                      {product.brand && <span>{product.brand}</span>}
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default BarcodeScanner;

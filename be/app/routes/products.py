@@ -7,37 +7,102 @@ from app.models.categories import Categories
 from ..services.risk_service import evaluate_risk
 from ..database import get_db
 from ..services import crawler_tiki_service as tiki
+from ..services import barcode_service
 from ..services.product_service import filter_products_service
 from ..crud import products as product_crud
 from ..core.security import get_optional_user
 from ..services.search_history_service import save_search_history
 from ..services.view_history_service import add_view_history
+from ..services.chat_intent_service import parse_search_intent
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
 # ============================================================
 # 1️⃣ TÌM KIẾM SẢN PHẨM THEO TÊN (TEXT SEARCH)
 # ============================================================
+# @router.get("/search")
+# def search_product(q: str, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
+#     """
+#     Tìm kiếm sản phẩm theo từ khóa (tên sản phẩm).
+#     - Gọi Tiki crawler để lấy danh sách sản phẩm.
+#     """
+#     if not q:
+#         raise HTTPException(status_code=400, detail="Thiếu từ khóa tìm kiếm")
+
+#     results = tiki.crawl_by_text(db, q)
+#     if not results:
+#         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm phù hợp")
+#     save_search_history(db, current_user, query=q, results=results)
+#     return {
+#         "input_type": "text",
+#         "query": q,
+#         "count": len(results),
+#         "results": results
+#     }
+
 @router.get("/search")
-def search_product(q: str, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
+def search_product(
+    q: str,
+    use_ai: bool = True,  # 👈 thêm flag để bật AI
+    db: Session = Depends(get_db),
+    current_user=Depends(get_optional_user)
+):
     """
-    Tìm kiếm sản phẩm theo từ khóa (tên sản phẩm).
-    - Gọi Tiki crawler để lấy danh sách sản phẩm.
+    Tìm kiếm sản phẩm bằng tên hoặc câu chat tự nhiên (AI hiểu ngữ nghĩa).
     """
     if not q:
         raise HTTPException(status_code=400, detail="Thiếu từ khóa tìm kiếm")
 
-    results = tiki.crawl_by_text(db, q)
+    # Nếu bật AI, dùng Gemini để hiểu câu chat
+    parsed = {}
+    if use_ai:
+        parsed = parse_search_intent(q)
+        keyword = parsed.get("product_name") or q
+    else:
+        keyword = q
+
+    results = tiki.crawl_by_text(db, keyword)
+    # Apply AI-derived filters if available
+    if use_ai and isinstance(parsed, dict) and results:
+        brand = (parsed.get("brand") or "").strip() if parsed.get("brand") else ""
+        max_price = parsed.get("max_price")
+        origin = (parsed.get("origin") or "").strip() if parsed.get("origin") else ""
+        is_vn_brand = bool(parsed.get("is_vietnam_brand")) if parsed.get("is_vietnam_brand") is not None else False
+
+        def _contains(val, needle: str) -> bool:
+            if not val or not needle:
+                return False
+            return str(needle).lower() in str(val).lower()
+
+        filtered = results
+        if brand:
+            # Prefer exact Brand match when available, fallback to Product_Name contains
+            filtered = [
+                r for r in filtered
+                if _contains(r.get("Brand"), brand) or _contains(r.get("Product_Name"), brand)
+            ]
+        if isinstance(max_price, (int, float)):
+            filtered = [r for r in filtered if isinstance(r.get("Price"), (int, float)) and r.get("Price") <= max_price]
+        if origin:
+            filtered = [r for r in filtered if _contains(r.get("Origin"), origin) or _contains(r.get("Brand_country"), origin)]
+        if is_vn_brand:
+            filtered = [
+                r for r in filtered
+                if _contains(r.get("Origin"), "việt") or _contains(r.get("Brand_country"), "việt") or _contains(r.get("Brand_country"), "vietnam")
+            ]
+        results = filtered
     if not results:
-        raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm phù hợp")
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy sản phẩm cho từ khóa: {keyword}")
+
     save_search_history(db, current_user, query=q, results=results)
     return {
         "input_type": "text",
         "query": q,
+        "ai_parsed": parsed if use_ai else None,
+        "keyword_used": keyword,
         "count": len(results),
         "results": results
     }
-
 
 # ============================================================
 # 2️⃣ TRA CỨU SẢN PHẨM THEO MÃ VẠCH (BARCODE)
@@ -89,6 +154,44 @@ async def scan_product_image(file: UploadFile = File(...), db: Session = Depends
             "query": file.filename,
             "count": len(results),
             "results": results
+        }
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+# ============================================================
+# 3b️⃣ QUÉT MÃ VẠCH TỪ ẢNH (pyzbar)
+# ============================================================
+@router.post("/barcode/scan")
+async def scan_barcode_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_optional_user)
+):
+    """
+    Nhận ảnh, dùng pyzbar để nhận diện mã vạch, sau đó tra cứu sản phẩm theo mã đầu tiên.
+    Trả về danh sách mã tìm được và kết quả sản phẩm (nếu có).
+    """
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename or "")[ -1] or ".png") as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
+    try:
+        codes = barcode_service.decode_barcodes(tmp_path)
+        if not codes:
+            raise HTTPException(status_code=404, detail="Không nhận diện được mã vạch trong ảnh.")
+
+        # Tra cứu theo mã đầu tiên
+        primary = codes[0]
+        results = tiki.crawl_by_barcode(db, primary) or []
+        if results:
+            save_search_history(db, current_user, query=primary, results=results)
+        return {
+            "input_type": "barcode_image",
+            "codes": codes,
+            "best_code": primary,
+            "count": len(results),
+            "results": results,
         }
     finally:
         if os.path.exists(tmp_path):
@@ -241,7 +344,7 @@ def get_product_risk(product_id: int, db: Session = Depends(get_db)):
     if not product:
         return {"detail": "Product not found"}
 
-    risk = evaluate_risk(product)
+    risk = evaluate_risk(product, db)
 
     return {
         "Product_ID": product_id,

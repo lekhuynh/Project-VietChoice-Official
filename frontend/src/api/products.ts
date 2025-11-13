@@ -1,4 +1,4 @@
-﻿import { API_BASE_URL } from '../config';
+import { API_BASE_URL } from '../config';
 
 // Product shapes aligned with backend, optional for flexibility
 export interface ProductDetail {
@@ -34,7 +34,7 @@ export interface FavoriteProduct extends ProductMin {
 export interface ProductRisk {
   Product_ID: number;
   Risk_Score: number; // 0..1
-  Risk_Level: string; // "Thấp" | "Trung bình" | "Cao"
+  Risk_Level: string; // "Th?p" | "Trung b�nh" | "Cao"
   Reasons: string[];
 }
 
@@ -68,7 +68,7 @@ export const fetchSearchProducts = async (
       { credentials: 'include' }
     );
     if (!response.ok) {
-      throw new Error('Không thể tìm kiếm sản phẩm.');
+      throw new Error('Kh�ng th? t�m ki?m s?n ph?m.');
     }
     const data = await response.json();
     const items = (data?.results || []) as ProductMin[];
@@ -77,7 +77,7 @@ export const fetchSearchProducts = async (
   } catch (err) {
     // eslint-disable-next-line no-console
     console.info('[fetchSearchProducts] network error:', err);
-    throw new Error('Không thể kết nối tới dịch vụ tìm kiếm. Vui lòng thử lại sau.');
+    throw new Error('Kh�ng th? k?t n?i t?i d?ch v? t�m ki?m. Vui l�ng th? l?i sau.');
   }
 };
 
@@ -90,13 +90,13 @@ export const fetchProductDetail = async (
       credentials: 'include',
     });
     if (!response.ok) {
-      throw new Error('Không tìm thấy sản phẩm.');
+      throw new Error('Kh�ng t�m th?y s?n ph?m.');
     }
     return (await response.json()) as ProductDetail;
   } catch (err) {
     // eslint-disable-next-line no-console
     console.info('[fetchProductDetail] network error:', err);
-    throw new Error('Không thể kết nối tới dịch vụ sản phẩm. Vui lòng thử lại sau.');
+    throw new Error('Kh�ng th? k?t n?i t?i d?ch v? s?n ph?m. Vui l�ng th? l?i sau.');
   }
 };
 
@@ -105,7 +105,7 @@ export const fetchProductRisk = async (
 ): Promise<ProductRisk> => {
   const res = await fetch(`${API_BASE_URL}/products/${productId}/risk`, { credentials: 'include' });
   if (!res.ok) {
-    throw new Error('Không lấy được rủi ro sản phẩm.');
+    throw new Error('Kh�ng l?y du?c r?i ro s?n ph?m.');
   }
   return (await res.json()) as ProductRisk;
 };
@@ -135,7 +135,7 @@ export const fetchProductsByBarcode = async (
     credentials: 'include',
   });
   if (!res.ok) {
-    throw new Error('Không lấy được sản phẩm theo mã vạch.');
+    throw new Error('Kh�ng l?y du?c s?n ph?m theo m� v?ch.');
   }
   const data = (await res.json()) as ProductSearchResponse<ProductMin>;
   return (data?.results ?? []) as ProductMin[];
@@ -152,7 +152,7 @@ export const scanProductsByImage = async (
     credentials: 'include',
   });
   if (!res.ok) {
-    throw new Error('Không nhận diện được ảnh sản phẩm.');
+    throw new Error('Kh�ng nh?n di?n du?c ?nh s?n ph?m.');
   }
   const data = (await res.json()) as ProductSearchResponse<ProductMin>;
   return (data?.results ?? []) as ProductMin[];
@@ -164,7 +164,7 @@ export const fetchFavorites = async (): Promise<FavoriteProduct[]> => {
     const response = await fetch(`${API_BASE_URL}/favorite/list`, { credentials: 'include' });
     if (!response.ok) {
       if (response.status === 401) throw new Error('Unauthenticated');
-      throw new Error('Lỗi khi tải danh sách yêu thích.');
+      throw new Error('L?i khi t?i danh s�ch y�u th�ch.');
     }
     const data = await response.json();
     return (data?.favorites as FavoriteProduct[]) || [];
@@ -181,7 +181,7 @@ export const addFavorite = async (productId: number): Promise<void> => {
     credentials: 'include',
   });
   if (!response.ok) {
-    throw new Error('Thêm vào danh sách yêu thích thất bại.');
+    throw new Error('Th�m v�o danh s�ch y�u th�ch th?t b?i.');
   }
 };
 
@@ -191,6 +191,6 @@ export const removeFavorite = async (productId: number): Promise<void> => {
     credentials: 'include',
   });
   if (!response.ok) {
-    throw new Error('Xóa khỏi danh sách yêu thích thất bại.');
+    throw new Error('X�a kh?i danh s�ch y�u th�ch th?t b?i.');
   }
 };
