@@ -27,8 +27,8 @@ const LoginForm: React.FC = () => {
       } catch {
         // ignore if CustomEvent isn't supported
       }
-      // Reload/navigate to profile
-      window.location.href = '/profile';
+      // Navigate to home after login
+      window.location.href = '/';
     } catch (err: any) {
       setError(err?.message || 'Đăng nhập thất bại.');
     } finally {

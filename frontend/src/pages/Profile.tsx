@@ -131,6 +131,11 @@ const Profile: React.FC = () => {
       } catch {
         // ignore
       }
+      try {
+        window.location.href = '/auth';
+      } catch {
+        // ignore
+      }
     }
   };
 

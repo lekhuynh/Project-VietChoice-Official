@@ -32,8 +32,8 @@ const RegisterForm: React.FC = () => {
       try {
         window.dispatchEvent(new CustomEvent('auth-change', { detail: { authenticated: true } }));
       } catch {}
-      // Reload to show profile after registration
-      window.location.href = '/profile';
+      // Reload to show home after registration
+      window.location.href = '/';
     } catch (err: any) {
       setError(err?.message || 'Đăng ký thất bại.');
     } finally {
