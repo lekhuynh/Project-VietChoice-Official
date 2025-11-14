@@ -21,7 +21,13 @@ const LoginForm: React.FC = () => {
     setIsLoading(true);
     try {
       await login({ email, password });
-      // Reload the page to re-evaluate auth gate (no extra API call here)
+      // Notify other parts of the app that auth succeeded, then navigate
+      try {
+        window.dispatchEvent(new CustomEvent('auth-change', { detail: { authenticated: true } }));
+      } catch {
+        // ignore if CustomEvent isn't supported
+      }
+      // Reload/navigate to profile
       window.location.href = '/profile';
     } catch (err: any) {
       setError(err?.message || 'Đăng nhập thất bại.');

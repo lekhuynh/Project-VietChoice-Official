@@ -126,6 +126,11 @@ const Profile: React.FC = () => {
       setSearchHistory([]);
       setViewedHistory([]);
       setUnauthenticated(true);
+      try {
+        window.dispatchEvent(new CustomEvent('auth-change', { detail: { authenticated: false } }));
+      } catch {
+        // ignore
+      }
     }
   };
 

@@ -29,6 +29,9 @@ const RegisterForm: React.FC = () => {
     setIsLoading(true);
     try {
       await register({ name, email, password });
+      try {
+        window.dispatchEvent(new CustomEvent('auth-change', { detail: { authenticated: true } }));
+      } catch {}
       // Reload to show profile after registration
       window.location.href = '/profile';
     } catch (err: any) {

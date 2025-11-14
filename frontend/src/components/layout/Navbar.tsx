@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { SearchIcon, ScanIcon, ShoppingBagIcon, UserIcon, MenuIcon, XIcon } from 'lucide-react';
+import { fetchUserProfile } from '../../api/user';
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
@@ -20,12 +21,36 @@ const Navbar = () => {
       href: '/products',
       icon: <ShoppingBagIcon className="w-5 h-5" />,
     },
-    {
-      name: 'Tài khoản',
-      href: '/profile',
-      icon: <UserIcon className="w-5 h-5" />,
-    },
+    // Account link is rendered specially below based on authentication state
   ];
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const checkAuth = async () => {
+      try {
+        await fetchUserProfile();
+        if (mounted) setIsAuthenticated(true);
+      } catch (err) {
+        if (mounted) setIsAuthenticated(false);
+      }
+    };
+    checkAuth();
+    const onAuthChange = (ev: Event) => {
+      try {
+        // @ts-ignore
+        const d = (ev as CustomEvent).detail;
+        setIsAuthenticated(Boolean(d?.authenticated));
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('auth-change', onAuthChange as EventListener);
+    return () => {
+      mounted = false;
+      window.removeEventListener('auth-change', onAuthChange as EventListener);
+    };
+  }, []);
   return (
     <header className="bg-white shadow-md">
       <div className="container mx-auto px-4">
@@ -55,7 +80,23 @@ const Navbar = () => {
                 <span>{item.name}</span>
               </Link>
             ))}
-            
+            {/* Account link: show text 'Đăng nhập' when unauthenticated, icon when authenticated */}
+            {isAuthenticated ? (
+              <Link
+                to="/profile"
+                className={`flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium ${location.pathname === '/profile' ? 'text-emerald-600 bg-emerald-50' : 'text-gray-600 hover:text-emerald-600 hover:bg-emerald-50'}`}
+              >
+                <UserIcon className="w-5 h-5" />
+                <span>Tài khoản</span>
+              </Link>
+            ) : (
+              <Link
+                to="/auth"
+                className={`flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium ${location.pathname === '/auth' ? 'text-emerald-600 bg-emerald-50' : 'text-gray-600 hover:text-emerald-600 hover:bg-emerald-50'}`}
+              >
+                <span className="font-medium">Đăng nhập</span>
+              </Link>
+            )}
           </nav>
         </div>
         {/* Mobile menu */}
@@ -72,7 +113,24 @@ const Navbar = () => {
                 <span>{item.name}</span>
               </Link>
             ))}
-            
+            {isAuthenticated ? (
+              <Link
+                to="/profile"
+                className={`flex items-center space-x-3 px-4 py-3 text-base font-medium ${location.pathname === '/profile' ? 'text-emerald-600 bg-emerald-50' : 'text-gray-600 hover:text-emerald-600 hover:bg-emerald-50'}`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                <UserIcon className="w-5 h-5" />
+                <span>Tài khoản</span>
+              </Link>
+            ) : (
+              <Link
+                to="/auth"
+                className={`flex items-center space-x-3 px-4 py-3 text-base font-medium ${location.pathname === '/auth' ? 'text-emerald-600 bg-emerald-50' : 'text-gray-600 hover:text-emerald-600 hover:bg-emerald-50'}`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                <span className="font-medium">Đăng nhập</span>
+              </Link>
+            )}
           </div>
         )}
       </div>
