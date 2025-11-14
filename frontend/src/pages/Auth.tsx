@@ -1,26 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import LoginForm from '../components/auth/LoginForm';
 import RegisterForm from '../components/auth/RegisterForm';
+import { API_BASE_URL } from '../config';
+
 const Auth = () => {
-  const [activeTab, setActiveTab] = useState('login');
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const handleTabChange = (tab: 'login' | 'register') => {
+    setActiveTab(tab);
+  };
   return (
-    <div className="max-w-md mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
-      <div className="flex">
-        <button
-          className={`flex-1 py-4 text-center font-medium ${activeTab === 'login' ? 'text-emerald-600 border-b-2 border-emerald-600' : 'text-gray-500 border-b border-gray-200'}`}
-          onClick={() => setActiveTab('login')}
-        >
-          Đăng nhập
-        </button>
-        <button
-          className={`flex-1 py-4 text-center font-medium ${activeTab === 'register' ? 'text-emerald-600 border-b-2 border-emerald-600' : 'text-gray-500 border-b border-gray-200'}`}
-          onClick={() => setActiveTab('register')}
-        >
-          Đăng ký
-        </button>
+    // Thay đổi: Thêm "pb-24" để tạo khoảng đệm dưới
+    <div className="min-h-screen flex items-start justify-center bg-gray-50 px-4 pt-24 pb-24">
+      <div ref={cardRef} className="w-full max-w-md bg-white rounded-xl shadow-xl overflow-hidden">
+        <div className="px-8 py-10">
+          <h2 className="text-4xl font-bold text-[#00A878] text-center mb-10 tracking-tight">{activeTab === 'register' ? 'Đăng ký' : 'Đăng nhập'}</h2>
+
+          <div className="">{activeTab === 'login' ? <LoginForm /> : <RegisterForm />}</div>
+
+          <div className="text-center text-sm text-gray-600 mt-6 pt-6 border-t border-gray-200">
+            {activeTab === 'register' ? (
+              <>
+                Đã có tài khoản?{' '}
+                <button type="button" className="text-[#00A878] font-medium" onClick={() => handleTabChange('login')}>
+                  Đăng nhập ngay
+                </button>
+              </>
+            ) : (
+              <>
+                Chưa có tài khoản?{' '}
+                <button type="button" className="text-[#00A878] font-medium" onClick={() => handleTabChange('register')}>
+                  Đăng ký ngay
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="p-6">{activeTab === 'login' ? <LoginForm /> : <RegisterForm />}</div>
     </div>
   );
 };
+
 export default Auth;

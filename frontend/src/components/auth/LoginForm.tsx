@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2Icon } from 'lucide-react';
+import { Loader2Icon, Eye, EyeOff } from 'lucide-react';
 import { login } from '../../api/auth';
 
 const LoginForm: React.FC = () => {
@@ -9,6 +9,7 @@ const LoginForm: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -30,12 +31,15 @@ const LoginForm: React.FC = () => {
   };
 
   return (
-    <form onSubmit={handleSubmit}>
+    // Thay đổi: space-y-1 -> space-y-6
+    <form onSubmit={handleSubmit} className="space-y-6">
       {error && (
-        <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4 text-sm">{error}</div>
+        // Thay đổi: Bỏ mb-6
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg text-sm font-medium">{error}</div>
       )}
-      <div className="mb-4">
-        <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+      {/* Thay đổi: Bỏ mb-5 */}
+      <div>
+        <label htmlFor="email" className="block text-base font-semibold text-gray-800 mb-2">
           Email
         </label>
         <input
@@ -43,43 +47,48 @@ const LoginForm: React.FC = () => {
           id="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00A878] focus:border-transparent text-base transition"
           placeholder="Nhập email của bạn"
         />
       </div>
-      <div className="mb-6">
-        <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+      {/* Thay đổi: Bỏ mb-7 */}
+      <div className="relative">
+        <label htmlFor="password" className="block text-base font-semibold text-gray-800 mb-2">
           Mật khẩu
         </label>
         <input
-          type="password"
+          type={showPassword ? 'text' : 'password'}
           id="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00A878] focus:border-transparent text-base transition"
           placeholder="Nhập mật khẩu của bạn"
         />
+        <button type="button" className="absolute right-3 top-12 text-gray-500 hover:text-gray-700" onClick={() => setShowPassword((s) => !s)}>
+          {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+        </button>
       </div>
-      <div className="flex items-center justify-between mb-6">
+      {/* Thay đổi: Bỏ mb-8 */}
+      <div className="flex items-center justify-between">
         <div className="flex items-center">
           <input
             id="remember"
             type="checkbox"
-            className="h-4 w-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+            className="h-5 w-5 accent-[#00A878] border-gray-300 rounded focus:ring-[#00A878]"
           />
-          <label htmlFor="remember" className="ml-2 block text-sm text-gray-700">
+          <label htmlFor="remember" className="ml-3 block text-sm font-medium text-gray-700">
             Ghi nhớ đăng nhập
           </label>
         </div>
         <div className="text-sm">
-          <a href="#" className="text-emerald-600 hover:text-emerald-500">
+          <a href="#" className="font-medium text-[#00A878] hover:text-[#008f68] transition">
             Quên mật khẩu?
           </a>
         </div>
       </div>
       <button
         type="submit"
-        className="w-full py-2 px-4 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 flex justify-center"
+        className="w-full py-3 px-4 bg-[#00A878] text-white font-semibold text-base rounded-lg hover:bg-[#008f68] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#00A878] flex justify-center transition duration-200"
         disabled={isLoading}
       >
         {isLoading ? (

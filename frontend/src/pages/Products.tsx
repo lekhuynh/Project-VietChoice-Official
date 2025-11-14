@@ -42,7 +42,7 @@ const Products: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(8);
+  const [pageSize, setPageSize] = useState(12);
 
   const [categoryTree, setCategoryTree] = useState<CategoryNode[]>([]);
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
@@ -156,18 +156,6 @@ const Products: React.FC = () => {
             <FilterIcon className="h-4 w-4 mr-1" />
             Bộ lọc
           </button>
-          <div className="flex items-center space-x-2">
-            <label className="text-sm text-gray-600">Hiển thị</label>
-            <select
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-              className="border border-gray-300 rounded px-2 py-1 text-sm"
-            >
-              <option value={8}>8 / trang</option>
-              <option value={12}>12 / trang</option>
-              <option value={16}>16 / trang</option>
-            </select>
-          </div>
         </div>
       </div>
 
@@ -241,11 +229,11 @@ const Products: React.FC = () => {
                 </div>
                 <div className="flex flex-col gap-2">
                   <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={isVnOrigin} onChange={(e) => setIsVnOrigin(e.target.checked)} />
+                    <input className="h-4 w-4 accent-[#00A878]" type="checkbox" checked={isVnOrigin} onChange={(e) => setIsVnOrigin(e.target.checked)} />
                     Hàng sản xuất tại Việt Nam
                   </label>
                   <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={isVnBrand} onChange={(e) => setIsVnBrand(e.target.checked)} />
+                    <input className="h-4 w-4 accent-[#00A878]" type="checkbox" checked={isVnBrand} onChange={(e) => setIsVnBrand(e.target.checked)} />
                     Thương hiệu Việt Nam
                   </label>
                 </div>
