@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 import time
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 import math, threading
 import concurrent.futures
 import asyncio
@@ -282,13 +282,13 @@ def get_product_reviews(
     """
     HÃ m dá»‹ch vá»¥ TUáº¦N Tá»° (Synchronous) láº¥y TOÃ€N Bá»˜ Ä‘Ã¡nh giÃ¡ cá»§a sáº£n pháº©m.
 
-    Thá»±c hiá»‡n 3 bÆ°á»›c:
-    1. Láº¥y dá»¯ liá»‡u Page 1 vÃ  review_count.
-    2. TÃ­nh total_pages = ceil(review_count / page_limit).
-    3. Láº·p tuáº§n tá»± tá»« Page 1 Ä‘áº¿n total_pages Ä‘á»ƒ thu tháº­p táº¥t cáº£ review.
+    Thực hiện 3 bước:
+    1. Lấy dữ liệu Page 1 và review_count.
+    2. Tính total_pages = ceil(review_count / page_limit).
+    3. Lặp tuần tự từ Page 1 đến total_pages để thu thập tất cả review.
     """
     all_reviews: List[str] = []
-    # Giá»›i háº¡n sá»‘ lÆ°á»£ng review yÃªu cáº§u cho má»—i trang (max 50)
+    # Giới hạn số lượng review yêu cầu cho mỗi trang (max 50)
     max_limit = min(50, limit) 
 
     # 1. Gá»ŒI API Láº¦N Äáº¦U (PAGE 1) Äá»‚ Láº¤Y review_count
@@ -487,7 +487,7 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
     except Exception:
         pass
         # ---------------------------
-    # Láº¥y vÃ  lÃ m sáº¡ch mÃ´ táº£ sáº£n pháº©m
+    # Lấy và làm sạch mô tả sản phẩm
     # ---------------------------
     from bs4 import BeautifulSoup
     description_clean = None
@@ -495,17 +495,17 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
         html_desc = product_data.get("description", "")
         if html_desc:
             soup = BeautifulSoup(html_desc, "html.parser")
-            # Loáº¡i bá» HTML, tÃ¡ch dÃ²ng giá»¯a cÃ¡c Ä‘oáº¡n
+            # Loại bỏ HTML, tách dòng giữa các đoạn
             description_clean = soup.get_text(separator="\n").strip()
-            # XÃ³a dÃ²ng trá»‘ng vÃ  kÃ½ tá»± thá»«a
+            # Xóa dòng trống và ký tự thừa
             description_clean = "\n".join(
                 [line.strip() for line in description_clean.splitlines() if line.strip()]
             )
     except Exception as e:
-        print(f"[Warning] KhÃ´ng láº¥y Ä‘Æ°á»£c mÃ´ táº£: {e}")
+        print(f"[Warning] Không lấy được mô tả: {e}")
 
     # ---------------------------
-    # Chuáº©n bá»‹ dá»¯ liá»‡u lÆ°u vÃ o DB
+    # Chuẩn bị dữ liệu lưu vào DB
     # ---------------------------
     product_record = {
         "External_ID": product_data.get("id"),
@@ -525,12 +525,12 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
     }
 
     product = product_crud.create_or_update_by_external_id(db, product_record)
-    print("[DEBUG] LÆ°u sáº£n pháº©m:", product_record)
+    print("[DEBUG] Lưu sản phẩm:", product_record)
     if not product:
         return None
 
     # ---------------------------
-    # Cáº­p nháº­t sentiment (phÃ¢n tÃ­ch cáº£m xÃºc)
+    # Cập nhật sentiment (phân tích cảm xúc)
     # ---------------------------
     update_sentiment_from_tiki_reviews(db, product.External_ID)
 
@@ -554,14 +554,12 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
 # ============================================================
 
 from ..services import icheck_service, ocr_service
-from ..services import gemini_image_service
-
 
 # ---------------------- Láº¥y danh sÃ¡ch 10 ID ----------------------
 def get_tiki_ids(keyword: str, page: int = 1, limit: int = 10) -> List[int]:
     """
-    Gá»i API Tiki Ä‘á»ƒ láº¥y danh sÃ¡ch external_id sáº£n pháº©m theo tá»« khÃ³a.
-    Loáº¡i bá» quáº£ng cÃ¡o (advertisement hoáº·c Tiki Ads).
+    Gọi API Tiki để lấy danh sách external_id sản phẩm theo từ khóa.
+    Loại bỏ quảng cáo (advertisement hoặc Tiki Ads).
     """
     search_url = f"https://tiki.vn/api/v2/products?q={requests.utils.quote(keyword)}&page={page}"
     try:
@@ -591,44 +589,44 @@ def get_tiki_ids(keyword: str, page: int = 1, limit: int = 10) -> List[int]:
 
 def search_and_crawl_tiki_products(db: Session, keyword: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    âœ… Pipeline tá»‘i Æ°u:
-    - TÃ¬m danh sÃ¡ch product_id tá»« Tiki.
-    - Bá» qua cÃ¡c sáº£n pháº©m Ä‘Ã£ tá»“n táº¡i trong DB (theo External_ID).
-    - CÃ o song song (multi-thread) Ä‘á»ƒ tÄƒng tá»‘c.
-    - Tráº£ vá» danh sÃ¡ch káº¿t quáº£ sáº£n pháº©m (cÃ³ hoáº·c Ä‘Ã£ tá»“n táº¡i).
+    ✅ Pipeline tối ưu:
+    - Tìm danh sách product_id từ Tiki.
+    - Bỏ qua các sản phẩm đã tồn tại trong DB (theo External_ID).
+    - Cào song song (multi-thread) để tăng tốc.
+    - Trả về danh sách kết quả sản phẩm (có hoặc đã tồn tại).
     """
 
     if not keyword:
-        print("[TIKI] âš ï¸ Thiáº¿u tá»« khÃ³a tÃ¬m kiáº¿m.")
+        print("[TIKI] ⚠️ Thiếu từ khóa tìm kiếm.")
         return []
 
-    print(f"\nðŸ” [TIKI] Báº¯t Ä‘áº§u tÃ¬m kiáº¿m tá»« khÃ³a: '{keyword}'")
+    print(f"\n🔍 [TIKI] Bắt đầu tìm kiếm từ khóa: '{keyword}'")
 
     # ----------------------
-    # B1: Láº¥y danh sÃ¡ch ID tá»« API Tiki
+    # B1: Lấy danh sách ID từ API Tiki
     # ----------------------
     ids = get_tiki_ids(keyword, page=1, limit=limit)
     if not ids:
-        print(f"[TIKI] âŒ KhÃ´ng tÃ¬m tháº¥y sáº£n pháº©m nÃ o cho '{keyword}'")
+        print(f"[TIKI] ❌ Không tìm thấy sản phẩm nào cho '{keyword}'")
         return []
 
-    print(f"[TIKI] âœ… Láº¥y Ä‘Æ°á»£c {len(ids)} ID sáº£n pháº©m tá»« API.")
+    print(f"[TIKI] ✅ Lấy được {len(ids)} ID sản phẩm từ API.")
 
     results: List[Dict[str, Any]] = []
 
     # ----------------------
-    # B2: Kiá»ƒm tra trÃ¹ng trong DB (External_ID)
+    # B2: Kiểm tra trùng trong DB (External_ID)
     # ----------------------
     existing_ids = set(product_crud.get_all_external_ids(db))
     new_ids = [pid for pid in ids if pid not in existing_ids]
 
     if not new_ids:
-        print("[TIKI] ðŸ” Táº¥t cáº£ sáº£n pháº©m Ä‘Ã£ tá»“n táº¡i trong DB. Bá» qua cÃ o.")
+        print("[TIKI] 💤 Tất cả sản phẩm đã tồn tại trong DB. Bỏ qua cào.")
     else:
-        print(f"[TIKI] âš™ï¸ CÃ³ {len(new_ids)} sáº£n pháº©m má»›i cáº§n cÃ o.")
+        print(f"[TIKI] 🛒 Có {len(new_ids)} sản phẩm mới cần cào.")
 
     # ----------------------
-    # B3: Láº¥y dá»¯ liá»‡u sáº£n pháº©m Ä‘Ã£ cÃ³ sáºµn (Ä‘á»ƒ tráº£ vá» ngay)
+    # B3: Lấy dữ liệu sản phẩm đã có sẵn (để trả về ngay)
     # ----------------------
     for pid in existing_ids.intersection(ids):
         existing = product_crud.get_by_external_id(db, pid)
@@ -675,12 +673,12 @@ def search_and_crawl_tiki_products(db: Session, keyword: str, limit: int = 10) -
                 results.append(product)
 
     duration = round(time.time() - start_time, 2)
-    print(f"[TIKI] âœ… HoÃ n táº¥t cÃ o {len(new_ids)} sáº£n pháº©m má»›i trong {duration}s.")
+    print(f"[TIKI] ✅ Hoàn tất cào {len(new_ids)} sản phẩm mới trong {duration}s.")
 
     # ----------------------
-    # B5: Tráº£ káº¿t quáº£ tá»•ng há»£p
+    # B5: Trả kết quả tổng hợp
     # ----------------------
-    print(f"[TIKI] ðŸ”Ž Tá»•ng cá»™ng {len(results)} sáº£n pháº©m Ä‘Æ°á»£c tráº£ vá».")
+    print(f"[TIKI] 🧎 Tổng cộng {len(results)} sản phẩm được trả về.")
     return results
 
 
@@ -689,92 +687,89 @@ def search_and_crawl_tiki_products(db: Session, keyword: str, limit: int = 10) -
 def crawl_by_barcode(db: Session, barcode: str) -> List[Dict[str, Any]]:
     """
     Pipeline cho route /products/barcode/{barcode}.
-    1ï¸âƒ£ DÃ¹ng iCheck Ä‘á»ƒ tra tÃªn sáº£n pháº©m.
-    2ï¸âƒ£ Náº¿u cÃ³ tÃªn â†’ tÃ¬m trÃªn Tiki (hÃ m crawl_by_text sáº½ tá»± lÆ°u DB).
-    3ï¸âƒ£ Náº¿u iCheck hoáº·c Tiki Ä‘á»u khÃ´ng ra â†’ tráº£ thÃ´ng bÃ¡o hÆ°á»›ng dáº«n nháº­p tÃªn.
+    1️⃣🛒 Dùng iCheck để tra tên sản phẩm.
+    2️⃣🛒 Nếu có tên → tìm trên Tiki (hàm crawl_by_text sẽ tự lưu DB).
+    3️⃣🛒 Nếu iCheck hoặc Tiki đều không ra → trả thông báo hướng dẫn nhập tên.
     """
     if not barcode:
-        return [{"message": "Thiáº¿u mÃ£ váº¡ch Ä‘á»ƒ tra cá»©u."}]
+        return [{"message": "Thiếu mã vạch để tra cứu."}]
 
-    # 1ï¸âƒ£ Gá»i iCheck
+    # 1️⃣🛒 Gọi iCheck
     # Use safe wrapper to avoid nested event loop issues in async contexts
     product_name = icheck_service.lookup_product_name_safe(barcode)
 
     if product_name:
-        print(f"[iCheck] âœ… TÃ¬m tháº¥y tÃªn sáº£n pháº©m: {product_name}")
+        print(f"[iCheck] ✅ Tìm thấy tên sản phẩm: {product_name}")
 
-        # 2ï¸âƒ£ Gá»i Tiki theo tÃªn (crawl_by_text Ä‘Ã£ tá»± lÆ°u DB)
+        # 2️⃣🛒 Gọi Tiki theo tên (crawl_by_text đã tự lưu DB)
         results = crawl_by_text(db, product_name)
         if results:
             return results
 
-        # Tiki khÃ´ng cÃ³ káº¿t quáº£
-        print(f"[Tiki] âš ï¸ KhÃ´ng tÃ¬m tháº¥y sáº£n pháº©m nÃ o cho '{product_name}'.")
+        # Tiki không có kết quả
+        print(f"[Tiki] ⚠️ Không tìm thấy sản phẩm nào cho '{product_name}'.")
         return [{
-            "message": f"KhÃ´ng tÃ¬m tháº¥y sáº£n pháº©m tÆ°Æ¡ng á»©ng vá»›i mÃ£ váº¡ch {barcode}. "
-                       "Vui lÃ²ng nháº­p tÃªn sáº£n pháº©m Ä‘á»ƒ tiáº¿p tá»¥c tÃ¬m kiáº¿m."
+            "message": f"Không tìm thấy sản phẩm tương ứng với mã vạch {barcode}. "
+                       "Vui lòng nhập tên sản phẩm để tiếp tục tìm kiếm."
         }]
 
-    # 3ï¸âƒ£ iCheck khÃ´ng cÃ³ dá»¯ liá»‡u
-    print(f"[iCheck] âŒ KhÃ´ng tÃ¬m tháº¥y dá»¯ liá»‡u cho barcode {barcode}.")
+    # 3️⃣🛒 iCheck không có dữ liệu
+    print(f"[iCheck] ❌ Không tìm thấy dữ liệu cho barcode {barcode}.")
     return [{
-        "message": f"KhÃ´ng tÃ¬m tháº¥y sáº£n pháº©m cho mÃ£ váº¡ch {barcode}. "
-                   "Vui lÃ²ng nháº­p tÃªn sáº£n pháº©m Ä‘á»ƒ tÃ¬m kiáº¿m."
+        "message": f"Không tìm thấy sản phẩm cho mã vạch {barcode}. "
+                   "Vui lòng nhập tên sản phẩm để tìm kiếm."
     }]
 
 
 
 def crawl_by_image(db: Session, image_path: str) -> List[Dict[str, Any]]:
     """
-    Pipeline cho route /products/scan/image.
-    1) Dùng OCR để trích xuất text từ ảnh.
-    2) Kết hợp Gemini để nhận dạng tên sản phẩm rõ hơn.
-    3) Thử tìm sản phẩm theo từng gợi ý (ưu tiên Gemini trước).
+    Pipeline CHUẨN:
+    1) OCR => extract text
+    2) Dùng chính text OCR làm keyword tìm kiếm
     """
+
     if not image_path:
         return [{"message": "Thiếu đường dẫn ảnh để quét."}]
 
+    # -----------------------------------------------------------
+    # 1) OCR
+    # -----------------------------------------------------------
     ocr_text = (ocr_service.extract_text_from_image(image_path) or "").strip()
+
     if ocr_text:
-        print(f"[OCR] ✅ Nhận diện được text: '{ocr_text}'")
+        print(f"[OCR] 📄 Text: '{ocr_text}'")
     else:
-        print("[OCR] ⚠️ Không nhận diện được chữ trong ảnh.")
+        print("[OCR] ❌ Không đọc được chữ trong ảnh.")
 
-    gemini_name = gemini_image_service.identify_product_name_from_image(image_path)
-    if gemini_name:
-        gemini_name = gemini_name.strip()
-        if gemini_name:
-            print(f"[Gemini] ✅ Gợi ý tên sản phẩm: '{gemini_name}'")
-        else:
-            gemini_name = None
+    # Nếu OCR không ra text thì báo người dùng
+    if not ocr_text:
+        return [{"message": "Không đọc được chữ trong ảnh. Vui lòng nhập tên để tìm kiếm."}]
 
-    candidates = []
-    for keyword in [gemini_name, ocr_text]:
-        keyword = (keyword or "").strip()
-        if keyword and keyword.lower() not in [c.lower() for c in candidates]:
-            candidates.append(keyword)
+    product_name = ocr_text
 
-    if not candidates:
-        return [{"message": "Không nhận diện được nội dung trong ảnh. Vui lòng chụp rõ hơn hoặc nhập tên sản phẩm."}]
+    # -----------------------------------------------------------
+    # 4) SEARCH THEO 1 KEYWORD DUY NHẤT
+    # -----------------------------------------------------------
+    print(f"[Search] 🔎 Tìm kiếm theo keyword: '{product_name}'")
+    results = crawl_by_text(db, product_name)
 
-    for keyword in candidates:
-        print(f"[Search] Tìm sản phẩm với từ khóa: {keyword}")
-        results = crawl_by_text(db, keyword)
-        if results:
-            return results
+    # Nếu có kết quả sản phẩm thật
+    if isinstance(results, list) and results and isinstance(results[0], dict):
+        print("[Search] ✅ Tìm thấy kết quả.")
+        return results
 
-    print(f"[Tiki] ⚠️ Không tìm thấy sản phẩm nào cho các gợi ý: {candidates}")
-    joined = "', '".join(candidates)
-    return [{"message": f"Không tìm thấy sản phẩm tương ứng với '{joined}'. Vui lòng nhập tên sản phẩm để tiếp tục tìm kiếm."}]
+    print(f"[Search] ❌ Không tìm thấy sản phẩm phù hợp '{product_name}'")
+    return [{"message": f"Không tìm thấy sản phẩm tương ứng với '{product_name}'."}]
 
 def crawl_by_text(db: Session, text: str) -> List[Dict[str, Any]]:
     """
     Pipeline cho route /search?q=...
-    1. DÃ¹ng text lÃ m tá»« khÃ³a tÃ¬m kiáº¿m Tiki.
+    1. Dùng text làm từ khóa tìm kiếm Tiki.
     """
     if not text:
         return []
-    print(f"[Search] TÃ¬m sáº£n pháº©m vá»›i tá»« khÃ³a: {text}")
+    print(f"[Search] Tìm sản phẩm với từ khóa: {text}")
     return search_and_crawl_tiki_products_fast(db, keyword=text)
 
 
