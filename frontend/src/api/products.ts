@@ -38,11 +38,15 @@ export interface ProductRisk {
   Reasons: string[];
 }
 
+export type ProductSearchInputType = 'product_search' | 'chat' | 'barcode' | 'image' | 'barcode_image';
+
 export interface ProductSearchResponse<T = ProductMin> {
-  input_type: 'text' | 'barcode' | 'image';
+  input_type: ProductSearchInputType;
   query: string;
+  refined_query?: string | null;
   count: number;
   results: T[];
+  ai_message?: string | null;
 }
 
 // Top rated (legacy helper)
@@ -61,23 +65,41 @@ export const fetchTopRatedProducts = async (limit: number): Promise<ProductMin[]
 // Search products
 export const fetchSearchProducts = async (
   query: string
-): Promise<{ products: ProductMin[]; total: number }> => {
+): Promise<ProductSearchResponse<ProductMin>> => {
   try {
     const response = await fetch(
       `${API_BASE_URL}/products/search?q=${encodeURIComponent(query)}`,
       { credentials: 'include' }
     );
     if (!response.ok) {
-      throw new Error('Không th? tìm ki?m s?n ph?m.');
+      throw new Error('Kh?ng th? t?m ki?m s?n ph?m.');
     }
-    const data = await response.json();
-    const items = (data?.results || []) as ProductMin[];
-    const total = (data?.count as number) ?? items.length;
-    return { products: items, total };
+    const data = (await response.json()) as ProductSearchResponse<ProductMin> & { message?: string };
+    const safeResults = Array.isArray(data?.results) ? data.results : [];
+    const rawType = (data?.input_type || '').toString().toLowerCase();
+    const normalizedType: ProductSearchInputType =
+      rawType === 'chat'
+        ? 'chat'
+        : rawType === 'barcode'
+        ? 'barcode'
+        : rawType === 'image'
+        ? 'image'
+        : rawType === 'barcode_image'
+        ? 'barcode_image'
+        : 'product_search';
+    const aiMessage = data?.ai_message ?? data?.message ?? null;
+    return {
+      input_type: normalizedType,
+      query: data?.query ?? query,
+      refined_query: data?.refined_query ?? null,
+      count: typeof data?.count === 'number' ? data.count : safeResults.length,
+      results: safeResults,
+      ai_message: aiMessage,
+    };
   } catch (err) {
     // eslint-disable-next-line no-console
     console.info('[fetchSearchProducts] network error:', err);
-    throw new Error('Không th? k?t n?i t?i d?ch v? tìm ki?m. Vui lòng th? l?i sau.');
+    throw new Error('Kh?ng th? k?t n?i t?i d?ch v? t?m ki?m. Vui l?ng th? l?i sau.');
   }
 };
 

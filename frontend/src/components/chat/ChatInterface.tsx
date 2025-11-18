@@ -182,20 +182,38 @@ const ChatInterface = () => {
     setIsLoading(true);
     setInput('');
     try {
-      const { products } = await fetchSearchProducts(userMessage.content);
-      const suggestions: Product[] = products.map(mapToUiProduct);
+      const response = await fetchSearchProducts(userMessage.content);
+      const aiMessage = response.ai_message?.trim();
+      const treatedAsChat =
+        response.input_type === 'chat' || (!!aiMessage && (!response.results?.length || (response.count ?? 0) === 0));
+      if (treatedAsChat) {
+        const botResponse: Message = {
+          id: messages.length + 2,
+          content: aiMessage || 'Minh chi ho tro san pham thoi, ban thu nhap cu the hon nhe.',
+          sender: 'bot',
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, botResponse]);
+        return;
+      }
+      const suggestions: Product[] = response.results.map(mapToUiProduct);
+      const keyword = (response.refined_query?.trim() || userMessage.content).trim();
+      const total = typeof response.count === 'number' ? response.count : suggestions.length;
+      const hasResults = suggestions.length > 0;
       const botResponse: Message = {
         id: messages.length + 2,
-        content: 'Mình đã tìm thấy một số sản phẩm phù hợp với yêu cầu của bạn:',
+        content: hasResults
+          ? `Minh da tim thay ${total} san pham phu hop voi tu khoa "${keyword}":`
+          : `Minh chua tim thay san pham nao khop voi "${keyword}". Ban thu mo ta cu the hon nhe!`,
         sender: 'bot',
         timestamp: new Date(),
-        suggestions,
+        suggestions: hasResults ? suggestions : undefined,
       };
       setMessages((prev) => [...prev, botResponse]);
     } catch {
       const botResponse: Message = {
         id: messages.length + 2,
-        content: 'Xin lỗi, hiện không thể tìm kiếm. Vui lòng thử lại sau.',
+        content: 'Xin loi, hien khong the tim kiem. Vui long thu lai sau.',
         sender: 'bot',
         timestamp: new Date(),
       };

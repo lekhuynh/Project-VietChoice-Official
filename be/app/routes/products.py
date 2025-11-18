@@ -17,91 +17,46 @@ from ..services.chat_intent_service import parse_search_intent
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
-# ============================================================
-# 1️⃣ TÌM KIẾM SẢN PHẨM THEO TÊN (TEXT SEARCH)
-# ============================================================
-# @router.get("/search")
-# def search_product(q: str, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
-#     """
-#     Tìm kiếm sản phẩm theo từ khóa (tên sản phẩm).
-#     - Gọi Tiki crawler để lấy danh sách sản phẩm.
-#     """
-#     if not q:
-#         raise HTTPException(status_code=400, detail="Thiếu từ khóa tìm kiếm")
 
-#     results = tiki.crawl_by_text(db, q)
-#     if not results:
-#         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm phù hợp")
-#     save_search_history(db, current_user, query=q, results=results)
-#     return {
-#         "input_type": "text",
-#         "query": q,
-#         "count": len(results),
-#         "results": results
-#     }
-
+# ============================================================
+##1️⃣ TÌM KIẾM SẢN PHẨM THEO TÊN (TEXT SEARCH)
+#============================================================
 @router.get("/search")
-def search_product(
-    q: str,
-    use_ai: bool = True,  # 👈 thêm flag để bật AI
-    db: Session = Depends(get_db),
+async def search_product(
+    q: str, 
+    db: Session = Depends(get_db), 
     current_user=Depends(get_optional_user)
 ):
-    """
-    Tìm kiếm sản phẩm bằng tên hoặc câu chat tự nhiên (AI hiểu ngữ nghĩa).
-    """
-    if not q:
-        raise HTTPException(status_code=400, detail="Thiếu từ khóa tìm kiếm")
+    # 1. Gọi Gemini phân tích
+    intent = await parse_search_intent(q)
 
-    # Nếu bật AI, dùng Gemini để hiểu câu chat
-    parsed = {}
-    if use_ai:
-        parsed = parse_search_intent(q)
-        keyword = parsed.get("product_name") or q
-    else:
-        keyword = q
+    # 2. CHECK Ý ĐỊNH: Nếu AI bảo đây là chat -> Dừng ngay, không cào dữ liệu
+    if intent.get("is_searching") is False:
+        print(f"🛑 [Stop Crawl] Chat detected: '{q}'")
+        return {
+            "input_type": "chat", # Frontend dựa vào đây để hiển thị bong bóng chat
+            "query": q,
+            "count": 0,
+            "results": [],
+            "ai_message": intent.get("message") # "Mình là AI bán hàng..."
+        }
 
-    results = tiki.crawl_by_text(db, keyword)
-    # Apply AI-derived filters if available
-    if use_ai and isinstance(parsed, dict) and results:
-        brand = (parsed.get("brand") or "").strip() if parsed.get("brand") else ""
-        max_price = parsed.get("max_price")
-        origin = (parsed.get("origin") or "").strip() if parsed.get("origin") else ""
-        is_vn_brand = bool(parsed.get("is_vietnam_brand")) if parsed.get("is_vietnam_brand") is not None else False
+    # 3. Nếu là tìm kiếm -> Tiếp tục quy trình cũ
+    refined_query = intent.get("product_name")
+    print(f"✅ [Searching] '{q}' -> Keyword: '{refined_query}'")
+    
+    results = tiki.crawl_by_text(db, refined_query)
+    
+    if results:
+        save_search_history(db, current_user, query=q, results=results)
 
-        def _contains(val, needle: str) -> bool:
-            if not val or not needle:
-                return False
-            return str(needle).lower() in str(val).lower()
-
-        filtered = results
-        if brand:
-            # Prefer exact Brand match when available, fallback to Product_Name contains
-            filtered = [
-                r for r in filtered
-                if _contains(r.get("Brand"), brand) or _contains(r.get("Product_Name"), brand)
-            ]
-        if isinstance(max_price, (int, float)):
-            filtered = [r for r in filtered if isinstance(r.get("Price"), (int, float)) and r.get("Price") <= max_price]
-        if origin:
-            filtered = [r for r in filtered if _contains(r.get("Origin"), origin) or _contains(r.get("Brand_country"), origin)]
-        if is_vn_brand:
-            filtered = [
-                r for r in filtered
-                if _contains(r.get("Origin"), "việt") or _contains(r.get("Brand_country"), "việt") or _contains(r.get("Brand_country"), "vietnam")
-            ]
-        results = filtered
-    if not results:
-        raise HTTPException(status_code=404, detail=f"Không tìm thấy sản phẩm cho từ khóa: {keyword}")
-
-    save_search_history(db, current_user, query=q, results=results)
     return {
-        "input_type": "text",
+        "input_type": "product_search", # Frontend hiển thị danh sách sản phẩm
         "query": q,
-        "ai_parsed": parsed if use_ai else None,
-        "keyword_used": keyword,
+        "refined_query": refined_query,
         "count": len(results),
-        "results": results
+        "results": results,
+        "ai_message": None
     }
 
 # ============================================================
@@ -352,69 +307,3 @@ def get_product_risk(product_id: int, db: Session = Depends(get_db)):
         "Risk_Level": risk["risk_level"],
         "Reasons": risk["reasons"]
     }
-
-# # =========================================================
-# # 9️⃣ LẤY SẢN PHẨM THEO DANH MỤC
-# # =========================================================
-# from typing import Optional
-
-# @router.get("/by-category")
-# def get_products_by_category(
-#     lv1: Optional[str] = Query(None),
-#     lv2: Optional[str] = Query(None),
-#     lv3: Optional[str] = Query(None),
-#     lv4: Optional[str] = Query(None),
-#     lv5: Optional[str] = Query(None),
-#     db: Session = Depends(get_db),
-# ):
-#     query = db.query(Products).join(Categories, Products.Category_ID == Categories.Category_ID)
-
-#     if lv1:
-#         query = query.filter(Categories.Category_Lv1.ilike(f"%{lv1}%"))
-#     if lv2:
-#         query = query.filter(Categories.Category_Lv2.ilike(f"%{lv2}%"))
-#     if lv3:
-#         query = query.filter(Categories.Category_Lv3.ilike(f"%{lv3}%"))
-#     if lv4:
-#         query = query.filter(Categories.Category_Lv4.ilike(f"%{lv4}%"))
-#     if lv5:
-#         query = query.filter(Categories.Category_Lv5.ilike(f"%{lv5}%"))
-
-#     return query.all()
-
-# # =========================================================
-# # Bộ lọc sản phẩm (dùng trong routes/products.py)
-# # =========================================================
-
-# @router.get("/filter")
-# def filter_products(
-#     db: Session = Depends(get_db),
-#     min_price: float = Query(None),
-#     max_price: float = Query(None),
-#     brand: str = Query(None),
-#     min_rating: float = Query(None),
-#     sort: str = Query(None, description="price_asc | price_desc | rating_desc"),
-#     is_vietnam_origin: bool = Query(False),
-#     is_vietnam_brand: bool = Query(False),
-#     positive_over: int = Query(None),
-#     category_path: str = Query(None, description="vd: Đồ Chơi > Đồ chơi trẻ em")
-# ):
-#     """
-#     Bộ lọc sản phẩm:
-#     - Khoảng giá, thương hiệu, rating
-#     - Sắp xếp: price_asc | price_desc | rating_desc
-#     - Ưu tiên hàng Việt Nam
-#     - Lọc theo danh mục (category_path)
-#     """
-#     return filter_products_service(
-#         db=db,
-#         min_price=min_price,
-#         max_price=max_price,
-#         brand=brand,
-#         min_rating=min_rating,
-#         sort=sort,
-#         is_vietnam_origin=is_vietnam_origin,
-#         is_vietnam_brand=is_vietnam_brand,
-#         positive_over=positive_over,
-#         category_path=category_path
-#     )

@@ -5,7 +5,7 @@ import CategoryTree from '../components/products/CategoryTree';
 import { type Product } from '../types';
 import { fetchCategoryTree, type CategoryNode } from '../api/categories';
 import { fetchProductsByCategoryAndFilters, type DbProduct, type ProductFilterParams } from '../api/products_filters';
-import { fetchSearchProducts, type ProductMin } from '../api/products';
+import { fetchSearchProducts, type ProductMin, type ProductSearchInputType } from '../api/products';
 
 const formatPrice = (v?: number) => {
   if (v === undefined || v === null) return '—';
@@ -38,6 +38,14 @@ const mapMinToProduct = (p: ProductMin): Product => ({
   sentiment: (p.Sentiment_Label?.toLowerCase() as Product['sentiment']) || undefined,
 });
 
+interface SearchIntentInsight {
+  query: string;
+  refinedQuery?: string | null;
+  aiMessage?: string | null;
+  inputType: ProductSearchInputType;
+  count: number;
+}
+
 const Products: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -59,8 +67,17 @@ const Products: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchInsight, setSearchInsight] = useState<SearchIntentInsight | null>(null);
 
-  const totalProducts = products.length;
+  const refinedKeyword = (searchInsight?.refinedQuery ?? '').trim();
+
+  const displayKeyword = refinedKeyword || searchInsight?.query || '';
+
+  const isChatResponse = !!searchInsight && (searchInsight.inputType === 'chat' || (!!searchInsight.aiMessage && searchInsight.count === 0));
+
+  const totalProducts = searchInsight ? (isChatResponse ? 0 : searchInsight.count) : products.length;
+
+
 
   useEffect(() => {
     fetchCategoryTree().then(setCategoryTree).catch(() => setCategoryTree([]));
@@ -85,7 +102,46 @@ const Products: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCategoryParams]);
 
+  const searchIntentLogs = useMemo(() => {
+
+    if (!searchInsight) return [];
+
+    const logs: string[] = [];
+
+    logs.push(`⚡ [DEBUG] Starting intent analysis for: '${searchInsight.query}'`);
+
+    logs.push('⏳ [DEBUG] Calling Gemini API...');
+
+    const isProductSearch = !isChatResponse;
+
+    const reply = isChatResponse ? searchInsight.aiMessage || '' : 'None';
+
+    logs.push(
+
+      `🧠 [DEBUG] Parsed -> Search: ${isProductSearch} | Product: '${isProductSearch ? refinedKeyword : ''}' | Reply: '${reply || 'None'}'`
+
+    );
+
+    if (isProductSearch) {
+
+      const keyword = refinedKeyword || searchInsight.query;
+
+      logs.push(`✅ [Searching] '${searchInsight.query}' -> Keyword: '${keyword}'`);
+
+      logs.push(`[Search] Tim san pham voi tu khoa: ${keyword}`);
+
+    } else {
+
+      logs.push(`🛑 [Stop Crawl] Chat detected: '${searchInsight.query}'`);
+
+    }
+
+    return logs;
+
+  }, [isChatResponse, refinedKeyword, searchInsight]);
+
   const applyFilters = async () => {
+    setSearchInsight(null);
     setLoading(true);
     setError(null);
     try {
@@ -111,15 +167,34 @@ const Products: React.FC = () => {
   };
 
   const doSearch = async () => {
-    if (!searchTerm.trim()) return applyFilters();
+    const normalized = searchTerm.trim();
+    if (!normalized) {
+      setSearchInsight(null);
+      return applyFilters();
+    }
     setLoading(true);
     setError(null);
     try {
-      const { products: items } = await fetchSearchProducts(searchTerm.trim());
-      setProducts(items.map(mapMinToProduct));
+      const response = await fetchSearchProducts(normalized);
+      const payload: SearchIntentInsight = {
+        query: response.query,
+        refinedQuery: response.refined_query ?? null,
+        aiMessage: response.ai_message ?? null,
+        inputType: response.input_type,
+        count: typeof response.count === 'number' ? response.count : response.results.length,
+      };
+      const treatedAsChat = payload.inputType === 'chat' || (!!payload.aiMessage && payload.count === 0);
+      setSearchInsight(payload);
       setPage(1);
+      if (treatedAsChat) {
+        setProducts([]);
+        return;
+      }
+      const items = response.results.map(mapMinToProduct);
+      setProducts(items);
     } catch (e: any) {
-      setError(e?.message || 'Lỗi tìm kiếm');
+      setError(e?.message || 'L?i t?m ki?m');
+      setSearchInsight(null);
       setProducts([]);
     } finally {
       setLoading(false);
@@ -273,6 +348,50 @@ const Products: React.FC = () => {
         </aside>
 
         <section className="md:col-span-3">
+          {searchInsight && (
+            <div className="bg-white rounded-xl border border-emerald-100 shadow-sm p-4 mb-5 space-y-4">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide">
+                <span
+                  className={`px-3 py-1 rounded-full border ${
+                    isChatResponse ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  }`}
+                >
+                  {isChatResponse ? 'Intent: Chat' : 'Intent: Product search'}
+                </span>
+                <span className="px-3 py-1 rounded-full border border-gray-200 text-gray-600 normal-case">
+                  Query: “{searchInsight.query}”
+                </span>
+                {!isChatResponse && displayKeyword && (
+                  <span className="px-3 py-1 rounded-full border border-emerald-200 text-emerald-700 normal-case">
+                    Keyword: “{displayKeyword}”
+                  </span>
+                )}
+                <span className="px-3 py-1 rounded-full border border-gray-200 text-gray-600 normal-case">
+                  Count: {searchInsight.count}
+                </span>
+              </div>
+              {isChatResponse && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-md p-3">
+                  {searchInsight.aiMessage || 'Minh chi ho tro san pham thoi, ban thu nhap cu the hon nhe.'}
+                </div>
+              )}
+              {!isChatResponse && displayKeyword && (
+                <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 text-sm rounded-md p-3">
+                  Bot dang tim kiem voi tu khoa “{displayKeyword}”.
+                </div>
+              )}
+              <div>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Intent Debug Log</div>
+                <div className="mt-2 bg-gray-900 text-gray-100 text-xs font-mono rounded-lg p-3 space-y-1 overflow-x-auto">
+                  {searchIntentLogs.map((line, idx) => (
+                    <div key={`${line}-${idx}`} className="whitespace-pre-wrap leading-relaxed">
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm text-gray-600">Tổng: {totalProducts} sản phẩm</div>
             <div className="flex items-center gap-2">
@@ -314,9 +433,14 @@ const Products: React.FC = () => {
               <ProductList products={products} currentPage={page} pageSize={pageSize} onPageChange={(p) => setPage(p)} />
               {products.length === 0 && (
                 <div className="text-center py-10">
-                  <p className="text-gray-500">Không có sản phẩm phù hợp.</p>
+                  <p className={`text-sm ${isChatResponse ? 'text-amber-700' : 'text-gray-500'}`}>
+                    {isChatResponse
+                      ? searchInsight?.aiMessage || 'Minh chi ho tro san pham thoi, ban thu nhap cu the hon nhe.'
+                      : `Khong co san pham phu hop${displayKeyword ? ` cho "${displayKeyword}"` : ''}.`}
+                  </p>
                 </div>
               )}
+
             </>
           )}
         </section>

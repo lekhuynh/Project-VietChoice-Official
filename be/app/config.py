@@ -31,8 +31,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_COOKIE_NAME: str
 
     # External services
-    GEMINI_API_KEY: str | None = None
-
+    API_KEY_GEMINI: str | None = None  # alternative key name
     @property
     def SQLSERVER_URL(self) -> str:
         user = quote_plus(self.db_user)

@@ -18,3 +18,4 @@ python-dotenv
 aiohttp
 pyzbar
 Pillow
+google-generativeai

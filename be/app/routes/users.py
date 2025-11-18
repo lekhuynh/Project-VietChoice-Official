@@ -34,18 +34,3 @@ def change_my_password(
         "user_id": updated_user.User_ID,
         "email": updated_user.User_Email,
     }
-
-# ---- Admin only ----
-@router.get("/admin/list", dependencies=[Depends(require_admin)])
-def list_all_users(db: Session = Depends(get_db)):
-    return user_service.get_all_users(db)
-
-
-@router.put("/admin/{user_id}/role", dependencies=[Depends(require_admin)])
-def update_user_role(user_id: int, role: str, db: Session = Depends(get_db)):
-    return user_service.change_user_role(db, user_id, role)
-
-
-@router.delete("/admin/{user_id}", dependencies=[Depends(require_admin)])
-def remove_user(user_id: int, db: Session = Depends(get_db)):
-    return user_service.delete_user(db, user_id)

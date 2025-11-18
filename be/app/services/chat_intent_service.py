@@ -1,154 +1,108 @@
-import os
 import json
-import re
-from typing import Any, Dict, Optional
-import requests
+import os
+import google.generativeai as genai
+from typing import Dict, Any
 from app.config import settings
 
-GEMINI_API_KEY = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
+# 1. IN RA LOG XEM CÓ KEY CHƯA (Che bớt key để bảo mật)
+raw_key = settings.API_KEY_GEMINI or os.getenv("API_KEY_GEMINI")
+if raw_key:
+    print(f"🔑 [DEBUG] API Key loaded: {raw_key[:5]}...{raw_key[-3:]}")
+    genai.configure(api_key=raw_key)
+else:
+    print("❌ [DEBUG] API KEY IS MISSING/NONE! Code will skip Gemini.")
 
-def _clean_query(text: str) -> str:
-    s = text.strip().lower()
-    # Remove courtesy/filler phrases and generic words
-    s = re.sub(r"\b(cho\s*(tôi|toi|mình|minh|em|anh|chị|chi|bạn|ban))\b", " ", s)
-    s = re.sub(r"\b(tôi|toi|mình|minh|em|anh|chị|chi|bạn|ban|tui|tao|tớ|to)\b", " ", s)
-    s = re.sub(r"\b(xem|tìm|tim|mua|giúp|giup|cần|can|muốn|muon|xài|xai)\b", " ", s)
-    s = re.sub(r"\b(sản\s*phẩm|san\s*pham|sp)\b", " ", s)
-    s = re.sub(r"\b(giá\s*rẻ)\b", " ", s)
-    # Normalize common composed tokens
-    s = s.replace("promax", "pro max").replace("pro-max", "pro max")
-    s = re.sub(r"\s+", " ", s)
-    return s.strip()
+async def parse_search_intent(message: str) -> Dict[str, Any]:
+    print(f"⚡ [DEBUG] Starting intent analysis for: '{message}'")
 
+    # CHECK 1: Kiểm tra Key
+    if not raw_key:
+        print("⚠️ [DEBUG] No API Key -> FALLBACK MODE ACTIVATED")
+        return {"is_searching": True, "product_name": message}
 
-def _normalize_product_name(name: str) -> str:
-    s = name.strip().lower()
-    s = s.replace("promax", "pro max").replace("pro-max", "pro max")
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+    model = genai.GenerativeModel(
+        'gemini-2.5-flash',
+        generation_config={"temperature": 0.1, "response_mime_type": "application/json"}
+    )
 
-
-def _parse_json_safely(text: str) -> Optional[Dict[str, Any]]:
-    t = text.strip()
-    if t.startswith("```"):
-        t = t.strip("`")
-        if t.startswith("json"):
-            t = t[4:].strip()
-    start = t.find("{")
-    end = t.rfind("}")
-    if start != -1 and end != -1 and end >= start:
-        fragment = t[start : end + 1]
-        try:
-            return json.loads(fragment)
-        except Exception:
-            return None
-    return None
-
-
-def parse_search_intent(message: str) -> Dict[str, Any]:
     prompt = f"""
-    Nhiệm vụ: phân tích một câu chat tiếng Việt để trích xuất truy vấn tìm sản phẩm. Trả về JSON hợp lệ DUY NHẤT, không bao gồm giải thích hay markdown.
+    Bạn là Trợ lý AI chuyên lọc ý định và trích xuất từ khóa cho sàn thương mại điện tử.
+    User input: "{message}"
 
-    Yêu cầu:
-    - Loại bỏ hư từ (ví dụ: "cho tôi xem", "tìm", "giúp", "mua", "giá rẻ").
-    - Đặt tên sản phẩm ngắn gọn vào product_name (ví dụ: "dầu gội Thorakao", "iphone 15 pro max").
-    - Nếu câu có thương hiệu, điền vào brand (ví dụ: "Thorakao", "Apple").
-    - Nếu có gợi ý về giá ("dưới 200k", "khoảng 100 nghìn", "giá rẻ"), điền max_price là số (VND).
-    - Nếu có đề cập Việt Nam/Việt, đặt is_vietnam_brand phù hợp.
+    NHIỆM VỤ:
+    1. Xác định: User đang muốn tìm mua sản phẩm cụ thể (Search) hay chỉ đang trò chuyện (Chat)?
+    2. Xử lý:
+       - Nếu Search: Trích xuất TÊN SẢN PHẨM + THÔNG SỐ KỸ THUẬT (Product Name). Loại bỏ mọi từ thừa.
+       - Nếu Chat: Trả lời lịch sự nhưng từ chối các câu hỏi không liên quan đến mua sắm.
 
-    Cấu trúc JSON:
+    --- QUY TẮC 1: PHÂN LOẠI Ý ĐỊNH (INTENT) ---
+    - is_searching = TRUE: Khi câu chứa tên một vật thể, hàng hóa cụ thể (iPhone, Áo thun, Nồi cơm...).
+    - is_searching = FALSE: 
+      + Câu chào hỏi xã giao ("Hi", "Chào shop", "Khỏe không").
+      + Câu hỏi kiến thức ngoài lề ("Ronaldo sinh năm nào", "1+1 bằng mấy").
+      + Ý định mua hàng nhưng KHÔNG CÓ tên sản phẩm ("Tôi muốn tìm kiếm", "Có bán gì không", "Tư vấn giúp").
+
+    --- QUY TẮC 2: LÀM SẠCH TỪ KHÓA (CLEANING) ---
+    - CHỈ GIỮ LẠI: Tên thương hiệu, Tên Model, Thông số (GB, RAM, Size, Màu), Loại sản phẩm.
+    - CẮT BỎ NGAY:
+      + Động từ: "mua", "bán", "tìm", "lấy", "xem", "cần".
+      + Tính từ cảm xúc/đánh giá: "rẻ", "đẹp", "bền", "tốt", "xịn", "ngon", "chính hãng", "uy tín", "hot".
+      + Yếu tố giá/địa điểm: "giá rẻ", "khuyến mãi", "hà nội", "tphcm", "trả góp".
+      + Từ hư: "cái", "chiếc", "dòng", "những", "cho tôi".
+
+    --- QUY TẮC 3: GIỚI HẠN PHẠM VI TRẢ LỜI (SCOPE) ---
+    - Nếu user hỏi chuyện ngoài lề (bóng đá, thời tiết, tình yêu...), hãy trả lời: "Mình chỉ chuyên về sản phẩm thôi ạ, bạn cần tìm món gì không?".
+    - Nếu user chào hỏi, hãy chào lại thân thiện và mời mua hàng.
+
+    Output JSON Schema:
     {{
-      "intent": "search",
-      "product_name": "<string>",
-      "brand": "<string | null>",
-      "max_price": <number | null>,
-      "origin": "<string | null>",
-      "is_vietnam_brand": <true|false>
+        "is_searching": boolean,
+        "product_name": string | null,
+        "reply": string | null
     }}
-
-    Ví dụ:
-    Input: "Cho tôi xem dầu gội Thorakao giá rẻ"
-    Output: {{
-      "intent": "search",
-      "product_name": "dầu gội Thorakao",
-      "brand": "Thorakao",
-      "max_price": 100000,
-      "origin": null,
-      "is_vietnam_brand": true
-    }}
-
-    Câu người dùng: "{message}"
     """
 
-    if not GEMINI_API_KEY:
-        cleaned = _clean_query(message)
-        return {"intent": "search", "product_name": _normalize_product_name(cleaned or message)}
-
-    headers = {"Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY}
-    data = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": prompt}],
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0.1,
-            "response_mime_type": "application/json",
-        },
-    }
-
     try:
-        res = requests.post(GEMINI_URL, headers=headers, json=data, timeout=15)
-        if res.status_code != 200:
-            cleaned = _clean_query(message)
-            return {"intent": "search", "product_name": _normalize_product_name(cleaned or message)}
+        # CHECK 2: Bắt đầu gọi Google
+        print("⏳ [DEBUG] Calling Gemini API...")
+        response = await model.generate_content_async(prompt)
+        
+        # CHECK 3: In ra raw text mà Google trả về (để debug)
+        # print(f"📩 [DEBUG] Gemini Raw Response: {response.text}")
 
-        body = res.json()
-        candidates = body.get("candidates") or []
-        text = ""
-        if candidates:
-            parts = (candidates[0].get("content") or {}).get("parts") or []
-            text = "".join([(p.get("text") or "") for p in parts])
-        if not text:
-            cleaned = _clean_query(message)
-            return {"intent": "search", "product_name": _normalize_product_name(cleaned or message)}
+        payload = json.loads(response.text)
+        
+        # Lấy dữ liệu và xử lý an toàn (tránh lỗi NoneType)
+        is_searching = payload.get("is_searching", False)
+        product_name = str(payload.get("product_name") or "").strip() # Ép về chuỗi và xóa khoảng trắng
+        reply = payload.get("reply")
+        print(f"🧠 [DEBUG] Parsed -> Search: {is_searching} | Product: '{product_name}' | Reply: '{reply}'")
 
-        parsed = _parse_json_safely(text) or {}
-        if not isinstance(parsed, dict) or not parsed.get("product_name"):
-            cleaned = _clean_query(message)
-            return {"intent": "search", "product_name": _normalize_product_name(cleaned or message)}
-
-        # Clean and normalize product name further to eliminate residual fillers
-        pn = _normalize_product_name(_clean_query(str(parsed.get("product_name") or "").strip()))
-        out: Dict[str, Any] = {
-            "intent": "search",
-            "product_name": pn or _normalize_product_name(_clean_query(message)),
-            "brand": (parsed.get("brand") or None),
-            "origin": (parsed.get("origin") or None),
-            "is_vietnam_brand": bool(parsed.get("is_vietnam_brand")) if parsed.get("is_vietnam_brand") is not None else False,
-            "max_price": None,
+        # --- LOGIC QUAN TRỌNG: CHẶN TỪ KHÓA RỖNG ---
+        # Chỉ trả về search KHI VÀ CHỈ KHI có tên sản phẩm thực sự (> 1 ký tự)
+        if is_searching and len(product_name) > 1:
+            return {
+                "is_searching": True, 
+                "product_name": product_name
+            }
+        
+        # Các trường hợp còn lại:
+        # 1. AI bảo là Chat (is_searching = False)
+        # 2. AI bảo là Search nhưng product_name rỗng (User nhập "tôi muốn tìm")
+        # -> Đều chuyển về Chat hết.
+        final_msg = reply if reply else "Bạn muốn tìm món gì cụ thể? Nhập tên giúp mình nha."
+        
+        return {
+            "is_searching": False, 
+            "message": final_msg
         }
-        mp = parsed.get("max_price")
-        if isinstance(mp, (int, float)):
-            out["max_price"] = int(mp)
-        elif isinstance(mp, str):
-            s = mp.lower().strip()
-            m = re.search(r"([0-9]+(?:[\.,][0-9]+)?)", s)
-            if m:
-                val = m.group(1).replace(".", "").replace(",", "")
-                try:
-                    n = float(val)
-                    if "k" in s or "nghìn" in s or "ngan" in s or "ngàn" in s:
-                        n *= 1000
-                    if "tr" in s or "triệu" in s or "trieu" in s:
-                        n *= 1_000_000
-                    out["max_price"] = int(n)
-                except Exception:
-                    pass
 
-        return out
-    except Exception:
-        cleaned = _clean_query(message)
-        return {"intent": "search", "product_name": _normalize_product_name(cleaned or message)}
+    except Exception as e:
+        # CHECK 4: Nếu lỗi Exception (Mất mạng, Google lỗi, Hết quota...)
+        print(f"🔥 [DEBUG] EXCEPTION HAPPENED: {str(e)}")
+        
+        # Trả về tin nhắn báo lỗi nhẹ nhàng, không crash app
+        return {
+            "is_searching": False, 
+            "message": "Hệ thống AI đang bận xíu, bạn thử lại sau nha."
+        }
