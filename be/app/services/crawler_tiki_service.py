@@ -762,6 +762,45 @@ def crawl_by_image(db: Session, image_path: str) -> List[Dict[str, Any]]:
     print(f"[Search] ❌ Không tìm thấy sản phẩm phù hợp '{product_name}'")
     return [{"message": f"Không tìm thấy sản phẩm tương ứng với '{product_name}'."}]
 
+def _to_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _rank_products(products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Ưu tiên sản phẩm có sentiment, review, rating tốt."""
+    if not products:
+        return products
+
+    ranked_rows: List[Dict[str, Any]] = []
+    passthrough_rows: List[Dict[str, Any]] = []
+
+    for item in products:
+        if isinstance(item, dict) and ("Product_ID" in item or "Product_Name" in item):
+            ranked_rows.append(item)
+        else:
+            passthrough_rows.append(item)
+
+    if not ranked_rows:
+        return products
+
+    def sort_key(product: Dict[str, Any]) -> tuple:
+        sentiment = _to_float(product.get("Sentiment_Score"))
+        review_count = _to_float(product.get("Review_Count"))
+        rating = _to_float(product.get("Avg_Rating"))
+        positive = _to_float(product.get("Positive_Percent"))
+        return (
+            sentiment if sentiment is not None else -1.0,
+            review_count if review_count is not None else 0.0,
+            rating if rating is not None else 0.0,
+            positive if positive is not None else 0.0,
+        )
+
+    ranked_rows.sort(key=sort_key, reverse=True)
+    return ranked_rows + passthrough_rows
+
 def crawl_by_text(db: Session, text: str) -> List[Dict[str, Any]]:
     """
     Pipeline cho route /search?q=...
@@ -806,6 +845,8 @@ async def asearch_and_crawl_tiki_products(db: Session, keyword: str, limit: int 
                     "Avg_Rating": existing.Avg_Rating,
                     "Review_Count": existing.Review_Count,
                     "Positive_Percent": existing.Positive_Percent,
+                    "Sentiment_Score": existing.Sentiment_Score,
+                    "Sentiment_Label": existing.Sentiment_Label,
                     "Origin": existing.Origin,
                     "Brand_country": existing.Brand_country,
                 })
@@ -814,7 +855,7 @@ async def asearch_and_crawl_tiki_products(db: Session, keyword: str, limit: int 
 
     new_ids = [pid for pid in ids if pid not in existing_ids]
     if not new_ids:
-        return results
+        return _rank_products(results)
 
     from ..database import SessionLocal
     connector = aiohttp.TCPConnector(limit=50)
@@ -915,18 +956,22 @@ async def asearch_and_crawl_tiki_products(db: Session, keyword: str, limit: int 
                         except Exception:
                             local_db.rollback()
 
+                        refreshed = product_crud.get_by_external_id(local_db, int(product.External_ID)) or product
+
                         return {
-                            "Product_ID": product.Product_ID,
-                            "Product_Name": product.Product_Name,
-                            "Brand": product.Brand,
-                            "Image_URL": product.Image_URL,
-                            "Price": product.Price,
-                            "Category_ID": product.Category_ID,
-                            "Avg_Rating": product_record.get("Avg_Rating"),
-                            "Review_Count": product_record.get("Review_Count"),
-                            "Positive_Percent": product_record.get("Positive_Percent"),
-                            "Origin": product_record.get("Origin"),
-                            "Brand_country": product_record.get("Brand_country"),
+                            "Product_ID": refreshed.Product_ID,
+                            "Product_Name": refreshed.Product_Name,
+                            "Brand": refreshed.Brand,
+                            "Image_URL": refreshed.Image_URL,
+                            "Price": refreshed.Price,
+                            "Category_ID": refreshed.Category_ID,
+                            "Avg_Rating": refreshed.Avg_Rating,
+                            "Review_Count": refreshed.Review_Count,
+                            "Positive_Percent": refreshed.Positive_Percent,
+                            "Sentiment_Score": refreshed.Sentiment_Score,
+                            "Sentiment_Label": refreshed.Sentiment_Label,
+                            "Origin": refreshed.Origin,
+                            "Brand_country": refreshed.Brand_country,
                         }
                     except Exception as e:
                         local_db.rollback()
@@ -943,7 +988,7 @@ async def asearch_and_crawl_tiki_products(db: Session, keyword: str, limit: int 
             if item:
                 results.append(item)
 
-    return results
+    return _rank_products(results)
 
 
 def search_and_crawl_tiki_products_fast(db: Session, keyword: str, limit: int = 10) -> List[Dict[str, Any]]:
