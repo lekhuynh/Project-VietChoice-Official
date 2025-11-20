@@ -6,6 +6,7 @@ from ..models.products import Products
 
 from app.models.categories import Categories
 
+from sqlalchemy import or_, func
 
 def get_by_id(db: Session, product_id: int) -> Optional[Products]:
     return db.query(Products).filter(Products.Product_ID == product_id).first()
@@ -140,12 +141,17 @@ def get_products_by_category_and_filters(
     min_price=None, max_price=None,
     brand=None, min_rating=None,
     sort=None,
+    skip: int = 0,
+    limit: int = 20,
     is_vietnam_origin=False, is_vietnam_brand=False,
-    positive_over=None
+    positive_over=None,
 ):
-    query = db.query(Products).join(Categories, Products.Category_ID == Categories.Category_ID)
+    query = (
+        db.query(Products)
+        .join(Categories, Products.Category_ID == Categories.Category_ID)
+    )
 
-    # --- Lọc danh mục theo cấp ---
+    # --- CATEGORY FILTER ---
     if lv5:
         query = query.filter(Categories.Category_Lv5 == lv5)
     elif lv4:
@@ -157,59 +163,32 @@ def get_products_by_category_and_filters(
     elif lv1:
         query = query.filter(Categories.Category_Lv1 == lv1)
 
-    # --- Lọc giá ---
+    # --- PRICE ---
     if min_price is not None:
         query = query.filter(Products.Price >= min_price)
     if max_price is not None:
         query = query.filter(Products.Price <= max_price)
 
-    # --- Lọc thương hiệu ---
+    # --- BRAND ---
     if brand:
         brands = [b.strip() for b in brand.split(",")]
         query = query.filter(Products.Brand.in_(brands))
 
-    # --- Lọc đánh giá ---
-    if min_rating:
+    # --- RATING ---
+    if min_rating is not None:
         query = query.filter(Products.Avg_Rating >= min_rating)
 
-    # --- 🇻🇳 Hàng Việt Nam ---
-    # 🇻🇳 Hàng Việt Nam (Origin)
+    # --- VIETNAM ---
     if is_vietnam_origin:
-        query = query.filter(
-            func.lower(Products.Origin).like("%việt nam%")
-        )
-
-    # 🇻🇳 Thương hiệu Việt Nam (Brand Country)
+        query = query.filter(func.lower(Products.Origin).like("%việt nam%"))
     if is_vietnam_brand:
-        query = query.filter(
-            func.lower(Products.Brand_country).like("%việt nam%")
-        )
+        query = query.filter(func.lower(Products.Brand_country).like("%việt nam%"))
 
-    # % đánh giá tích cực
-    if positive_over:
+    # --- POSITIVE ---
+    if positive_over is not None:
         query = query.filter(Products.Positive_Percent >= positive_over)
-        
 
-    # --- Sắp xếp ---
-    if sort == "price_asc":
-        query = query.order_by(Products.Price.asc())
-    elif sort == "price_desc":
-        query = query.order_by(Products.Price.desc())
-    elif sort == "rating_desc":
-        query = query.order_by(Products.Avg_Rating.desc())
-
-    return query.all()
-
-
-from sqlalchemy import or_, func
-
-def search_products_by_keyword(db: Session, keyword: str, limit: int = 20):
-    if not keyword:
-        return []
-
-    kw = f"%{keyword.lower()}%"  # chuẩn hóa
-
-    # Score AI tổng hợp cho search local
+    # --- AI SMART SCORE (DEFAULT SORT) ---
     score_expr = (
         (func.coalesce(Products.Sentiment_Score, 0) * 0.4)
         + (func.coalesce(Products.Avg_Rating, 0) * 0.3)
@@ -217,15 +196,103 @@ def search_products_by_keyword(db: Session, keyword: str, limit: int = 20):
         + (func.coalesce(Products.Positive_Percent, 0) * 0.1)
     )
 
-    return (
-        db.query(Products)
-        .filter(
+    # --- SORT ---
+    if not sort:
+        query = query.order_by(score_expr.desc())
+    else:
+        if sort == "price_asc":
+            query = query.order_by(Products.Price.asc())
+        elif sort == "price_desc":
+            query = query.order_by(Products.Price.desc())
+        elif sort == "rating_desc":
+            query = query.order_by(Products.Avg_Rating.desc())
+        elif sort == "review_desc":
+            query = query.order_by(Products.Review_Count.desc())
+        elif sort == "positive_desc":
+            query = query.order_by(Products.Positive_Percent.desc())
+        else:
+            query = query.order_by(score_expr.desc())  # fallback
+
+    total = query.count()
+    items = query.offset(skip).limit(limit).all()
+
+    return items, total
+
+def search_products_by_keyword_and_filters(
+    db: Session,
+    keyword: Optional[str] = None,
+    limit: int = 20,
+    skip: int = 0,
+    brand: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    min_rating: Optional[float] = None,
+    sort: Optional[str] = None,
+    is_vietnam_origin: bool = False,
+    is_vietnam_brand: bool = False,
+    positive_over: Optional[int] = None
+):
+    query = db.query(Products)
+
+    # --- SEARCH ---
+    if keyword:
+        kw = f"%{keyword.lower()}%"
+        query = query.filter(
             or_(
                 func.lower(Products.Product_Name).like(kw),
                 func.lower(Products.Brand).like(kw),
             )
         )
-        .order_by(score_expr.desc())   # sắp xếp theo score AI
-        .limit(limit)
-        .all()
+
+    # --- FILTERS ---
+    if brand:
+        brand_list = [b.strip() for b in brand.split(",")]
+        query = query.filter(Products.Brand.in_(brand_list))
+
+    if min_price is not None:
+        query = query.filter(Products.Price >= min_price)
+
+    if max_price is not None:
+        query = query.filter(Products.Price <= max_price)
+
+    if min_rating is not None:
+        query = query.filter(Products.Avg_Rating >= min_rating)
+
+    if is_vietnam_origin:
+        query = query.filter(func.lower(Products.Origin).like("%việt nam%"))
+
+    if is_vietnam_brand:
+        query = query.filter(func.lower(Products.Brand_country).like("%việt nam%"))
+
+    if positive_over is not None:
+        query = query.filter(Products.Positive_Percent >= positive_over)
+
+    # --- SCORE ---
+    score_expr = (
+        (func.coalesce(Products.Sentiment_Score, 0) * 0.4)
+        + (func.coalesce(Products.Avg_Rating, 0) * 0.3)
+        + (func.log(func.coalesce(Products.Review_Count, 0) + 1) * 0.2)
+        + (func.coalesce(Products.Positive_Percent, 0) * 0.1)
     )
+
+    # --- SORT ---
+    if not sort:
+        query = query.order_by(score_expr.desc())
+    else:
+        if sort == "price_asc":
+            query = query.order_by(Products.Price.asc())
+        elif sort == "price_desc":
+            query = query.order_by(Products.Price.desc())
+        elif sort == "rating_desc":
+            query = query.order_by(Products.Avg_Rating.desc())
+        elif sort == "review_desc":
+            query = query.order_by(Products.Review_Count.desc())
+        elif sort == "positive_desc":
+            query = query.order_by(Products.Positive_Percent.desc())
+        else:
+            query = query.order_by(score_expr.desc())  # fallback
+
+    total = query.count()
+    items = query.offset(skip).limit(limit).all()
+
+    return items, total

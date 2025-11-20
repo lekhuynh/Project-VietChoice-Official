@@ -85,50 +85,59 @@ def update_sentiment_score_and_label(db: Session, product_id: int, *, score: Opt
     return product_crud.update_product(db, prod, patch)
 
 
-# def filter_products_service(
-#     db: Session,
-#     min_price=None,
-#     max_price=None,
-#     brand=None,
-#     min_rating=None,
-#     sort=None,
-#     is_vietnam_origin=False,
-#     is_vietnam_brand=False,
-#     positive_over=None,
-#     category_path=None
-# ):
-#     return get_products_by_filter(
-#         db=db,
-#         min_price=min_price,
-#         max_price=max_price,
-#         brand=brand,
-#         min_rating=min_rating,
-#         sort=sort,
-#         is_vietnam_origin=is_vietnam_origin,
-#         is_vietnam_brand=is_vietnam_brand,
-#         positive_over=positive_over,
-#         category_path=category_path,
-#     )
-from sqlalchemy.orm import Session
-from app.crud.products import get_products_by_category_and_filters
-
-
 def filter_products_service(
     db: Session,
     lv1=None, lv2=None, lv3=None, lv4=None, lv5=None,
     min_price=None, max_price=None,
     brand=None, min_rating=None,
     sort=None,
+    skip: int = 0,
+    limit: int = 20,
     is_vietnam_origin=False, is_vietnam_brand=False,
     positive_over=None,
 ):
-    return get_products_by_category_and_filters(
+    items, total = product_crud.get_products_by_category_and_filters(
         db=db,
         lv1=lv1, lv2=lv2, lv3=lv3, lv4=lv4, lv5=lv5,
         min_price=min_price, max_price=max_price,
         brand=brand, min_rating=min_rating,
         sort=sort,
+        skip=skip,
+        limit=limit,
         is_vietnam_origin=is_vietnam_origin,
         is_vietnam_brand=is_vietnam_brand,
         positive_over=positive_over,
     )
+
+    return items, total
+
+def search_products_service(
+    db: Session,
+    keyword: Optional[str] = None,
+    limit: int = 20,
+    skip: int = 0,
+    brand: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    min_rating: Optional[float] = None,
+    sort: Optional[str] = None,
+    is_vietnam_origin: bool = False,
+    is_vietnam_brand: bool = False,
+    positive_over: Optional[int] = None
+):
+    items, total = product_crud.search_products_by_keyword_and_filters(
+        db=db,
+        keyword=keyword,
+        limit=limit,
+        skip=skip,
+        brand=brand,
+        min_price=min_price,
+        max_price=max_price,
+        min_rating=min_rating,
+        sort=sort,
+        is_vietnam_origin=is_vietnam_origin,
+        is_vietnam_brand=is_vietnam_brand,
+        positive_over=positive_over
+    )
+
+    return items, total

@@ -1,19 +1,17 @@
 import { type FC, useEffect, useRef, useState } from 'react';
 import { CameraIcon, XIcon, Loader2Icon } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Link } from 'react-router-dom';
 import { API_BASE_URL } from '../../config';
 import { type Product } from '../../types';
 import { type ProductMin } from '../../api/products';
+import ProductCard from '../products/ProductCard';
 
 const formatPrice = (v?: number) => {
   if (v === undefined || v === null) return '';
   try {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(
-      Number(v)
-    );
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(v));
   } catch {
-    return `${v} ₫`;
+    return `${v} đ`;
   }
 };
 
@@ -81,14 +79,12 @@ const BarcodeScanner: FC = () => {
         onScanFailure
       );
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('Failed to start camera', e);
       setError('Không mở được camera. Vui lòng kiểm tra quyền truy cập.');
       setIsScanning(false);
     }
   };
 
-  // Load persisted scan state on mount
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -104,13 +100,9 @@ const BarcodeScanner: FC = () => {
     } catch {}
   }, []);
 
-  // Persist scan state when results change
   useEffect(() => {
     try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ scanResult, products })
-      );
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ scanResult, products }));
     } catch {}
   }, [scanResult, products]);
 
@@ -156,7 +148,6 @@ const BarcodeScanner: FC = () => {
               setIsLoading(false);
               return;
             }
-            // No items; surface message or fallback to code path
             if (payload?.codes && Array.isArray(payload.codes) && payload.codes.length > 0) {
               setError(`Không tìm thấy sản phẩm cho mã: ${payload.codes[0]}`);
             } else {
@@ -166,10 +157,9 @@ const BarcodeScanner: FC = () => {
         }
       }
     } catch {
-      // fall through to code-based lookup
+      // fallback below
     }
 
-    // Fallback: use the live decoded text if available
     const code = String(scanResult || '').replace(/\D/g, '');
     if (code && code.length >= 6) {
       try {
@@ -197,13 +187,13 @@ const BarcodeScanner: FC = () => {
         }
       } catch {
         setProducts([]);
-        setError('Không thể tra cứu sản phẩm bằng mã vạch.');
+        setError('Không tra cứu sản phẩm bằng mã vạch.');
       } finally {
         setIsLoading(false);
       }
     } else {
       setIsLoading(false);
-      if (!attempted) setError('Không thể chụp/đọc mã. Vui lòng đưa mã rõ nét vào khung.');
+      if (!attempted) setError('Chưa chụp/đọc được mã. Vui lòng đưa mã rõ nét vào khung.');
     }
   };
 
@@ -238,8 +228,12 @@ const BarcodeScanner: FC = () => {
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-medium">Đưa mã vạch vào khung hình</h3>
             <div className="flex items-center gap-2">
-              <button onClick={captureAndScan} disabled={isLoading} title="Chụp ảnh & quét"
-                className={`px-3 py-1 rounded text-white ${isLoading ? 'bg-gray-300 cursor-wait' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+              <button
+                onClick={captureAndScan}
+                disabled={isLoading}
+                title="Chụp ảnh & quét"
+                className={`px-3 py-1 rounded text-white ${isLoading ? 'bg-gray-300 cursor-wait' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+              >
                 Chụp ảnh & quét
               </button>
               <button onClick={stopScanner} title="Dừng" className="text-gray-500 hover:text-gray-700">
@@ -265,28 +259,24 @@ const BarcodeScanner: FC = () => {
       )}
 
       {products.length > 0 && (
-        <div className="w-full max-w-md mt-6">
-          <h3 className="font-medium mb-3">Sản phẩm tìm thấy:</h3>
-          <div className="space-y-4">
+        <div className="w-full max-w-5xl mt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-800">Sản phẩm tìm thấy</h3>
+            <span className="text-sm text-gray-500">{products.length} kết quả</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {products.map((product) => (
-              <Link key={product.id} to={`/product/${product.id}`} className="block bg-white rounded-lg shadow p-3">
-                <div className="flex">
-                  <img src={product.image} alt={product.name} className="w-16 h-16 object-cover rounded" />
-                  <div className="ml-3">
-                    <h4 className="font-medium hover:text-emerald-600">{product.name}</h4>
-                    <p className="text-emerald-600">{product.price}</p>
-                    <div className="flex items-center mt-1 text-sm">
-                      <span className="ml-1">{product.rating}/5</span>
-                      {product.brand && <span className="mx-2">•</span>}
-                      {product.brand && <span>{product.brand}</span>}
-                    </div>
-                  </div>
-                </div>
-              </Link>
+              <ProductCard key={product.id} product={product} />
             ))}
           </div>
         </div>
       )}
+
+      {!isLoading && products.length === 0 && scanResult && !error && (
+        <div className="mt-4 text-sm text-gray-500">Chưa tìm thấy kết quả cho mã này.</div>
+      )}
+
+      {error && !isScanning && <div className="mt-4 text-sm text-red-600">{error}</div>}
     </div>
   );
 };

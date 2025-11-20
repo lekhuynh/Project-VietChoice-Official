@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../config';
+ï»¿import { API_BASE_URL } from '../config';
 
 // Product shapes aligned with backend, optional for flexibility
 export interface ProductDetail {
@@ -34,7 +34,7 @@ export interface FavoriteProduct extends ProductMin {
 export interface ProductRisk {
   Product_ID: number;
   Risk_Score: number; // 0..1
-  Risk_Level: string; // "Th?p" | "Trung bình" | "Cao"
+  Risk_Level: string; // "Th?p" | "Trung bÃ¬nh" | "Cao"
   Reasons: string[];
 }
 
@@ -133,13 +133,13 @@ export const fetchProductDetail = async (
       credentials: 'include',
     });
     if (!response.ok) {
-      throw new Error('Không tìm th?y s?n ph?m.');
+      throw new Error('KhÃ´ng tÃ¬m th?y s?n ph?m.');
     }
     return (await response.json()) as ProductDetail;
   } catch (err) {
     // eslint-disable-next-line no-console
     console.info('[fetchProductDetail] network error:', err);
-    throw new Error('Không th? k?t n?i t?i d?ch v? s?n ph?m. Vui lòng th? l?i sau.');
+    throw new Error('KhÃ´ng th? k?t n?i t?i d?ch v? s?n ph?m. Vui lÃ²ng th? l?i sau.');
   }
 };
 
@@ -148,7 +148,7 @@ export const fetchProductRisk = async (
 ): Promise<ProductRisk> => {
   const res = await fetch(`${API_BASE_URL}/products/${productId}/risk`, { credentials: 'include' });
   if (!res.ok) {
-    throw new Error('Không l?y du?c r?i ro s?n ph?m.');
+    throw new Error('KhÃ´ng l?y du?c r?i ro s?n ph?m.');
   }
   return (await res.json()) as ProductRisk;
 };
@@ -178,7 +178,7 @@ export const fetchProductsByBarcode = async (
     credentials: 'include',
   });
   if (!res.ok) {
-    throw new Error('Không l?y du?c s?n ph?m theo mã v?ch.');
+    throw new Error('KhÃ´ng l?y du?c s?n ph?m theo mÃ£ v?ch.');
   }
   const data = (await res.json()) as ProductSearchResponse<ProductMin>;
   return (data?.results ?? []) as ProductMin[];
@@ -195,7 +195,7 @@ export const scanProductsByImage = async (
     credentials: 'include',
   });
   if (!res.ok) {
-    throw new Error('Không nh?n di?n du?c ?nh s?n ph?m.');
+    throw new Error('KhÃ´ng nh?n di?n du?c ?nh s?n ph?m.');
   }
   const data = (await res.json()) as ProductSearchResponse<ProductMin>;
   return (data?.results ?? []) as ProductMin[];
@@ -207,7 +207,7 @@ export const fetchFavorites = async (): Promise<FavoriteProduct[]> => {
     const response = await fetch(`${API_BASE_URL}/favorite/list`, { credentials: 'include' });
     if (!response.ok) {
       if (response.status === 401) throw new Error('Unauthenticated');
-      throw new Error('L?i khi t?i danh sách yêu thích.');
+      throw new Error('L?i khi t?i danh sÃ¡ch yÃªu thÃ­ch.');
     }
     const data = await response.json();
     return (data?.favorites as FavoriteProduct[]) || [];
@@ -224,7 +224,7 @@ export const addFavorite = async (productId: number): Promise<void> => {
     credentials: 'include',
   });
   if (!response.ok) {
-    throw new Error('Thêm vào danh sách yêu thích th?t b?i.');
+    throw new Error('ThÃªm vÃ o danh sÃ¡ch yÃªu thÃ­ch th?t b?i.');
   }
 };
 
@@ -234,36 +234,44 @@ export const removeFavorite = async (productId: number): Promise<void> => {
     credentials: 'include',
   });
   if (!response.ok) {
-    throw new Error('Xóa kh?i danh sách yêu thích th?t b?i.');
+    throw new Error('XÃ³a kh?i danh sÃ¡ch yÃªu thÃ­ch th?t b?i.');
   }
 };
 
 
-export const fetchLocalProducts = async (
-  query: string,
-  limit = 20
-): Promise<ProductSearchResponse<ProductMin>> => {
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/products/search/local?q=${encodeURIComponent(query)}&limit=${limit}`,
-      { credentials: 'include' }
-    );
-    if (!response.ok) {
-      throw new Error('Không th? tìm ki?m s?n ph?m trong kho d? li?u.');
-    }
-    const data = (await response.json()) as ProductSearchResponse<ProductMin> & { message?: string };
-    const safeResults = Array.isArray(data?.results) ? data.results : [];
-    return {
-      input_type: data?.input_type ?? 'local_product_search',
-      query: data?.query ?? query,
-      refined_query: data?.refined_query ?? null,
-      count: typeof data?.count === 'number' ? data.count : safeResults.length,
-      results: safeResults,
-      ai_message: data?.ai_message ?? null,
-    };
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.info('[fetchLocalProducts] network error:', err);
-    throw new Error('Không th? k?t n?i t?i d?ch v? tìm ki?m n?i b?. Vui lòng th? l?i sau.');
-  }
-};
+export const fetchLocalProducts = async (
+  query: string,
+  limit = 20,
+  skip = 0
+): Promise<ProductSearchResponse<ProductMin>> => {
+  try {
+    const usp = new URLSearchParams();
+    usp.set("q", query);
+    usp.set("limit", String(limit));
+    usp.set("skip", String(skip));
+    const response = await fetch(
+      `${API_BASE_URL}/products/search/local?${usp.toString()}`,
+      { credentials: "include" }
+    );
+    if (!response.ok) {
+      throw new Error("Khong the tim kiem san pham trong kho du lieu.");
+    }
+    const data = (await response.json()) as ProductSearchResponse<ProductMin> & { message?: string };
+    const safeResults = Array.isArray(data?.results) ? data.results : [];
+    return {
+      input_type: data?.input_type ?? "local_product_search",
+      query: data?.query ?? query,
+      refined_query: data?.refined_query ?? null,
+      count: typeof data?.count === "number" ? data.count : safeResults.length,
+      total: typeof data?.total === "number" ? data.total : safeResults.length,
+      skip: typeof data?.skip === "number" ? data.skip : skip,
+      limit: typeof data?.limit === "number" ? data.limit : limit,
+      results: safeResults,
+      ai_message: data?.ai_message ?? null,
+    };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.info('[fetchLocalProducts] network error:', err);
+    throw new Error("Khong the ket noi toi dich vu tim kiem noi bo. Vui long thu lai sau.");
+  }
+};

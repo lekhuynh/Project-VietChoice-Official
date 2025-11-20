@@ -8,18 +8,17 @@ interface ProductListProps {
   products: Product[];
   currentPage: number;
   pageSize: number;
+  totalProducts: number;
   onPageChange: (page: number) => void;
 }
 
-const ProductList: FC<ProductListProps> = ({ products, currentPage, pageSize, onPageChange }) => {
-  const totalPages = Math.max(1, Math.ceil(products.length / pageSize));
-  const start = (currentPage - 1) * pageSize;
-  const pageItems = products.slice(start, start + pageSize);
+const ProductList: FC<ProductListProps> = ({ products, currentPage, pageSize, totalProducts, onPageChange }) => {
+  const totalPages = Math.max(1, Math.ceil(totalProducts / pageSize));
 
   return (
     <div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {pageItems.map((product) => (
+        {products.map((product) => (
           <ProductCard key={product.id} product={product} />
         ))}
       </div>

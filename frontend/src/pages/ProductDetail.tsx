@@ -1,9 +1,9 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
 import { ArrowLeftIcon, StarIcon, ShieldAlertIcon, InfoIcon, ShoppingCartIcon, EditIcon, TrashIcon, HeartIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import RatingBar from '../components/products/RatingBar';
 import { fetchProductDetail, fetchProductRisk, fetchRecommendedForProduct, fetchFavorites, addFavorite, removeFavorite, type ProductDetail, type ProductRisk, type ProductMin } from '../api/products';
 import { fetchReviewsByProduct, createReview, updateReview, deleteReview, type ProductReview } from '../api/reviews';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 const sentimentPill = (label?: string) => {
   const map: Record<string, string> = {
@@ -65,6 +65,12 @@ const currency = (v?: number | string) => {
 };
 
 const ProductDetailPage: React.FC = () => {
+  const navigate = useNavigate();
+  const handleBack = () => {
+  if (window.history.length > 1) navigate(-1);
+  else navigate('/products');
+  };
+
   const { id } = useParams();
   const productId = useMemo(() => Number(id), [id]);
 
@@ -143,9 +149,10 @@ const ProductDetailPage: React.FC = () => {
   if (error || !detail) {
     return (
       <div className="max-w-4xl mx-auto p-4">
-        <Link to="/products" className="inline-flex items-center text-emerald-600 hover:underline">
+        <button onClick={handleBack} className="inline-flex items-center text-emerald-600 hover:underline">
           <ArrowLeftIcon className="h-4 w-4 mr-1" /> Quay lại sản phẩm
-        </Link>
+        </button>
+
         <div className="mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded">{error || 'Không tìm thấy sản phẩm'}</div>
       </div>
     );
@@ -153,9 +160,10 @@ const ProductDetailPage: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto p-4">
-      <Link to="/products" className="inline-flex items-center text-emerald-600 hover:underline">
+      <button onClick={handleBack} className="inline-flex items-center text-emerald-600 hover:underline">
         <ArrowLeftIcon className="h-4 w-4 mr-1" /> Quay lại sản phẩm
-      </Link>
+      </button>
+
 
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="bg-white rounded-xl shadow overflow-hidden">
