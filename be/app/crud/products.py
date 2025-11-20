@@ -134,64 +134,6 @@ def get_all_external_ids(db):
     return [r[0] for r in result if r[0] is not None]
 
 
-
-
-# def get_products_by_filter(
-#     db: Session,
-#     min_price=None,
-#     max_price=None,
-#     brand=None,
-#     min_rating=None,
-#     sort=None,
-#     is_vietnam_origin=False,
-#     is_vietnam_brand=False,
-#     positive_over=None,
-#     category_path=None
-# ):
-#     query = db.query(Products)
-
-#     # Lọc theo khoảng giá
-#     if min_price is not None and max_price is not None:
-#         query = query.filter(Products.Price.between(min_price, max_price))
-#     elif min_price is not None:
-#         query = query.filter(Products.Price >= min_price)
-#     elif max_price is not None:
-#         query = query.filter(Products.Price <= max_price)
-
-#     # Lọc theo thương hiệu
-#     if brand:
-#         brand_list = [b.strip() for b in brand.split(",")]
-#         query = query.filter(Products.Brand.in_(brand_list))
-
-#     # Lọc theo rating
-#     if min_rating:
-#         query = query.filter(Products.Avg_Rating >= min_rating)
-
-#     # 🇻🇳 Lọc hàng Việt Nam
-#     if is_vietnam_origin:
-#         query = query.filter(Products.Origin.ilike("%Việt Nam%"))
-#     if is_vietnam_brand:
-#         query = query.filter(Products.Brand_country.ilike("%Việt Nam%"))
-#     if positive_over:
-#         query = query.filter(Products.Positive_Percent >= positive_over)
-
-#     # Lọc theo danh mục (nếu có)
-#     if category_path:
-#         query = query.join(Categories, Products.Category_ID == Categories.Category_ID)
-#         query = query.filter(Categories.Category_Path.like(f"{category_path}%"))
-
-#     # Sắp xếp
-#     if sort == "price_asc":
-#         query = query.order_by(Products.Price.asc())
-#     elif sort == "price_desc":
-#         query = query.order_by(Products.Price.desc())
-#     elif sort == "rating_desc":
-#         query = query.order_by(Products.Avg_Rating.desc())
-
-#     return query.all()
-
-
-
 def get_products_by_category_and_filters(
     db: Session,
     lv1=None, lv2=None, lv3=None, lv4=None, lv5=None,
@@ -231,12 +173,22 @@ def get_products_by_category_and_filters(
         query = query.filter(Products.Avg_Rating >= min_rating)
 
     # --- 🇻🇳 Hàng Việt Nam ---
+    # 🇻🇳 Hàng Việt Nam (Origin)
     if is_vietnam_origin:
-        query = query.filter(Products.Origin.ilike("%Việt Nam%"))
+        query = query.filter(
+            func.lower(Products.Origin).like("%việt nam%")
+        )
+
+    # 🇻🇳 Thương hiệu Việt Nam (Brand Country)
     if is_vietnam_brand:
-        query = query.filter(Products.Brand_country.ilike("%Việt Nam%"))
+        query = query.filter(
+            func.lower(Products.Brand_country).like("%việt nam%")
+        )
+
+    # % đánh giá tích cực
     if positive_over:
         query = query.filter(Products.Positive_Percent >= positive_over)
+        
 
     # --- Sắp xếp ---
     if sort == "price_asc":
@@ -247,3 +199,33 @@ def get_products_by_category_and_filters(
         query = query.order_by(Products.Avg_Rating.desc())
 
     return query.all()
+
+
+from sqlalchemy import or_, func
+
+def search_products_by_keyword(db: Session, keyword: str, limit: int = 20):
+    if not keyword:
+        return []
+
+    kw = f"%{keyword.lower()}%"  # chuẩn hóa
+
+    # Score AI tổng hợp cho search local
+    score_expr = (
+        (func.coalesce(Products.Sentiment_Score, 0) * 0.4)
+        + (func.coalesce(Products.Avg_Rating, 0) * 0.3)
+        + (func.log(func.coalesce(Products.Review_Count, 0) + 1) * 0.2)
+        + (func.coalesce(Products.Positive_Percent, 0) * 0.1)
+    )
+
+    return (
+        db.query(Products)
+        .filter(
+            or_(
+                func.lower(Products.Product_Name).like(kw),
+                func.lower(Products.Brand).like(kw),
+            )
+        )
+        .order_by(score_expr.desc())   # sắp xếp theo score AI
+        .limit(limit)
+        .all()
+    )

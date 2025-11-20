@@ -38,7 +38,7 @@ export interface ProductRisk {
   Reasons: string[];
 }
 
-export type ProductSearchInputType = 'product_search' | 'chat' | 'barcode' | 'image' | 'barcode_image';
+export type ProductSearchInputType = 'product_search' | 'local_product_search' | 'chat' | 'barcode' | 'image' | 'barcode_image';
 
 export interface ProductSearchResponse<T = ProductMin> {
   input_type: ProductSearchInputType;
@@ -74,27 +74,48 @@ export const fetchSearchProducts = async (
     if (!response.ok) {
       throw new Error('Kh?ng th? t?m ki?m s?n ph?m.');
     }
-    const data = (await response.json()) as ProductSearchResponse<ProductMin> & { message?: string };
-    const safeResults = Array.isArray(data?.results) ? data.results : [];
-    const rawType = (data?.input_type || '').toString().toLowerCase();
-    const normalizedType: ProductSearchInputType =
-      rawType === 'chat'
-        ? 'chat'
-        : rawType === 'barcode'
-        ? 'barcode'
-        : rawType === 'image'
-        ? 'image'
-        : rawType === 'barcode_image'
-        ? 'barcode_image'
-        : 'product_search';
-    const aiMessage = data?.ai_message ?? data?.message ?? null;
-    return {
-      input_type: normalizedType,
-      query: data?.query ?? query,
-      refined_query: data?.refined_query ?? null,
-      count: typeof data?.count === 'number' ? data.count : safeResults.length,
-      results: safeResults,
-      ai_message: aiMessage,
+    const data = (await response.json()) as ProductSearchResponse<ProductMin> & { message?: string };
+
+    const safeResults = Array.isArray(data?.results) ? data.results : [];
+
+    const rawType = (data?.input_type || '').toString().toLowerCase();
+
+    const normalizedType: ProductSearchInputType =
+
+      rawType === 'chat'
+
+        ? 'chat'
+
+        : rawType === 'barcode'
+
+        ? 'barcode'
+
+        : rawType === 'image'
+
+        ? 'image'
+
+        : rawType === 'barcode_image'
+
+        ? 'barcode_image'
+
+        : 'product_search';
+
+    const aiMessage = data?.ai_message ?? data?.message ?? null;
+
+    return {
+
+      input_type: normalizedType,
+
+      query: data?.query ?? query,
+
+      refined_query: data?.refined_query ?? null,
+
+      count: typeof data?.count === 'number' ? data.count : safeResults.length,
+
+      results: safeResults,
+
+      ai_message: aiMessage,
+
     };
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -216,3 +237,33 @@ export const removeFavorite = async (productId: number): Promise<void> => {
     throw new Error('Xóa kh?i danh sách yêu thích th?t b?i.');
   }
 };
+
+
+export const fetchLocalProducts = async (
+  query: string,
+  limit = 20
+): Promise<ProductSearchResponse<ProductMin>> => {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/products/search/local?q=${encodeURIComponent(query)}&limit=${limit}`,
+      { credentials: 'include' }
+    );
+    if (!response.ok) {
+      throw new Error('Không th? tìm ki?m s?n ph?m trong kho d? li?u.');
+    }
+    const data = (await response.json()) as ProductSearchResponse<ProductMin> & { message?: string };
+    const safeResults = Array.isArray(data?.results) ? data.results : [];
+    return {
+      input_type: data?.input_type ?? 'local_product_search',
+      query: data?.query ?? query,
+      refined_query: data?.refined_query ?? null,
+      count: typeof data?.count === 'number' ? data.count : safeResults.length,
+      results: safeResults,
+      ai_message: data?.ai_message ?? null,
+    };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.info('[fetchLocalProducts] network error:', err);
+    throw new Error('Không th? k?t n?i t?i d?ch v? tìm ki?m n?i b?. Vui lòng th? l?i sau.');
+  }
+};

@@ -5,7 +5,7 @@ import CategoryTree from '../components/products/CategoryTree';
 import { type Product } from '../types';
 import { fetchCategoryTree, type CategoryNode } from '../api/categories';
 import { fetchProductsByCategoryAndFilters, type DbProduct, type ProductFilterParams } from '../api/products_filters';
-import { fetchSearchProducts, type ProductMin, type ProductSearchInputType } from '../api/products';
+import { fetchLocalProducts, type ProductMin, type ProductSearchInputType } from '../api/products';
 
 const formatPrice = (v?: number) => {
   if (v === undefined || v === null) return '—';
@@ -102,44 +102,6 @@ const Products: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCategoryParams]);
 
-  const searchIntentLogs = useMemo(() => {
-
-    if (!searchInsight) return [];
-
-    const logs: string[] = [];
-
-    logs.push(`⚡ [DEBUG] Starting intent analysis for: '${searchInsight.query}'`);
-
-    logs.push('⏳ [DEBUG] Calling Gemini API...');
-
-    const isProductSearch = !isChatResponse;
-
-    const reply = isChatResponse ? searchInsight.aiMessage || '' : 'None';
-
-    logs.push(
-
-      `🧠 [DEBUG] Parsed -> Search: ${isProductSearch} | Product: '${isProductSearch ? refinedKeyword : ''}' | Reply: '${reply || 'None'}'`
-
-    );
-
-    if (isProductSearch) {
-
-      const keyword = refinedKeyword || searchInsight.query;
-
-      logs.push(`✅ [Searching] '${searchInsight.query}' -> Keyword: '${keyword}'`);
-
-      logs.push(`[Search] Tim san pham voi tu khoa: ${keyword}`);
-
-    } else {
-
-      logs.push(`🛑 [Stop Crawl] Chat detected: '${searchInsight.query}'`);
-
-    }
-
-    return logs;
-
-  }, [isChatResponse, refinedKeyword, searchInsight]);
-
   const applyFilters = async () => {
     setSearchInsight(null);
     setLoading(true);
@@ -175,7 +137,7 @@ const Products: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetchSearchProducts(normalized);
+      const response = await fetchLocalProducts(normalized, pageSize);
       const payload: SearchIntentInsight = {
         query: response.query,
         refinedQuery: response.refined_query ?? null,
@@ -348,50 +310,6 @@ const Products: React.FC = () => {
         </aside>
 
         <section className="md:col-span-3">
-          {searchInsight && (
-            <div className="bg-white rounded-xl border border-emerald-100 shadow-sm p-4 mb-5 space-y-4">
-              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide">
-                <span
-                  className={`px-3 py-1 rounded-full border ${
-                    isChatResponse ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                  }`}
-                >
-                  {isChatResponse ? 'Intent: Chat' : 'Intent: Product search'}
-                </span>
-                <span className="px-3 py-1 rounded-full border border-gray-200 text-gray-600 normal-case">
-                  Query: “{searchInsight.query}”
-                </span>
-                {!isChatResponse && displayKeyword && (
-                  <span className="px-3 py-1 rounded-full border border-emerald-200 text-emerald-700 normal-case">
-                    Keyword: “{displayKeyword}”
-                  </span>
-                )}
-                <span className="px-3 py-1 rounded-full border border-gray-200 text-gray-600 normal-case">
-                  Count: {searchInsight.count}
-                </span>
-              </div>
-              {isChatResponse && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-md p-3">
-                  {searchInsight.aiMessage || 'Minh chi ho tro san pham thoi, ban thu nhap cu the hon nhe.'}
-                </div>
-              )}
-              {!isChatResponse && displayKeyword && (
-                <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 text-sm rounded-md p-3">
-                  Bot dang tim kiem voi tu khoa “{displayKeyword}”.
-                </div>
-              )}
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Intent Debug Log</div>
-                <div className="mt-2 bg-gray-900 text-gray-100 text-xs font-mono rounded-lg p-3 space-y-1 overflow-x-auto">
-                  {searchIntentLogs.map((line, idx) => (
-                    <div key={`${line}-${idx}`} className="whitespace-pre-wrap leading-relaxed">
-                      {line}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm text-gray-600">Tổng: {totalProducts} sản phẩm</div>
             <div className="flex items-center gap-2">

@@ -59,6 +59,49 @@ async def search_product(
         "ai_message": None
     }
 
+def _serialize_product(product: Products) -> dict:
+    return {
+        "Product_ID": product.Product_ID,
+        "Product_Name": product.Product_Name,
+        "Brand": product.Brand,
+        "Image_URL": product.Image_URL,
+        "Product_URL": product.Product_URL,
+        "Price": float(product.Price) if product.Price else None,
+        "Avg_Rating": product.Avg_Rating,
+        "Review_Count": product.Review_Count,
+        "Positive_Percent": product.Positive_Percent,
+        "Sentiment_Score": product.Sentiment_Score,
+        "Sentiment_Label": product.Sentiment_Label,
+        "Origin": product.Origin,
+        "Brand_country": product.Brand_country,
+        "Source": product.Source,
+    }
+@router.get("/search/local")
+def search_product_local(
+    q: str,
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_optional_user)
+):
+    keyword = (q or "").strip()
+    if not keyword:
+        raise HTTPException(status_code=400, detail="Thiếu từ khóa")
+
+    db_products = product_crud.search_products_by_keyword(db, keyword, limit=limit)
+    results = [_serialize_product(p) for p in db_products]
+
+    if results:
+        save_search_history(db, current_user, query=q, results=results)
+
+    return {
+        "input_type": "local_product_search",
+        "query": q,
+        "refined_query": keyword,
+        "count": len(results),
+        "results": results,
+        "ai_message": None
+    }
+
 # ============================================================
 # 2️⃣ TRA CỨU SẢN PHẨM THEO MÃ VẠCH (BARCODE)
 # ============================================================
