@@ -1,4 +1,5 @@
 from typing import Optional, Sequence, Dict, Any
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -296,3 +297,20 @@ def search_products_by_keyword_and_filters(
     items = query.offset(skip).limit(limit).all()
 
     return items, total
+
+
+def get_tiki_products_older_than(db: Session, *, hours: int) -> Sequence[Products]:
+    """List Tiki products whose Updated_At is older than given hours."""
+    return (
+        db.query(Products)
+        .filter(
+            Products.Source == "Tiki",
+            Products.External_ID.isnot(None),
+            or_(
+                Products.Updated_At <= func.dateadd(func.hour, -hours, func.sysutcdatetime()),
+                Products.Updated_At.is_(None),
+            ),
+        )
+        .all()
+    )
+
