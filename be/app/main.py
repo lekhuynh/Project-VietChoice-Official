@@ -129,13 +129,10 @@ def favicon() -> Response:
 app.include_router(auth_router.router)
 app.add_middleware(AuthMiddleware)
 
-<<<<<<< HEAD
-=======
 from app.routes import admin
 app.include_router(admin.router)
 
 from app.routes import users
->>>>>>> 9e437d6ddd229a4e1721781e34b5eb64db300772
 app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(search_history.router)
