@@ -141,3 +141,20 @@ def search_products_service(
     )
 
     return items, total
+"""Đây là service lấy danh sách sản phẩm nổi bật dựa trên điểm số AI và lượt tìm kiếm"""
+
+def get_outstanding_product_service(
+    db: Session,
+    limit: int = 10,
+    brand: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+):
+    """Admin: lấy top sản phẩm nổi bật theo điểm AI + lượt tìm kiếm."""
+    return product_crud.get_outstanding_product(
+        db,
+        limit=limit,
+        brand=brand,
+        min_price=min_price,
+        max_price=max_price,
+    )
