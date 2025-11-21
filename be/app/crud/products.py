@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from ..models.products import Products
 
 from app.models.categories import Categories
+from app.models.search_history_products import Search_History_Products
 
 from sqlalchemy import or_, func
 
@@ -296,3 +297,58 @@ def search_products_by_keyword_and_filters(
     items = query.offset(skip).limit(limit).all()
 
     return items, total
+
+
+def get_outstanding_product(
+    db: Session,
+    *,
+    limit: int = 10,
+    brand: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+):
+    """Top sản phẩm nổi bật theo điểm AI (sentiment/rating/review/positive) + lượt tìm kiếm.
+
+    - Luôn có order_by trước limit để tránh lỗi OFFSET/LIMIT trên MSSQL.
+    - Cho phép lọc thêm theo brand và khoảng giá.
+    - Bổ sung điểm cộng theo lượt tìm kiếm (search count) qua bảng Search_History_Products.
+    """
+    # Subquery đếm số lần sản phẩm xuất hiện trong lịch sử tìm kiếm
+    search_counts_sq = (
+        db.query(
+            Search_History_Products.Product_ID.label("pid"),
+            func.count(Search_History_Products.ID).label("search_count"),
+        )
+        .group_by(Search_History_Products.Product_ID)
+        .subquery()
+    )
+
+    search_count = func.coalesce(search_counts_sq.c.search_count, 0)
+
+    score_expr = (
+        (func.coalesce(Products.Sentiment_Score, 0) * 0.35)
+        + (func.coalesce(Products.Avg_Rating, 0) * 0.3)
+        + (func.log(func.coalesce(Products.Review_Count, 0) + 1) * 0.2)
+        + (func.coalesce(Products.Positive_Percent, 0) * 0.1)
+        + (func.log(search_count + 1) * 0.05)  # Điểm cộng từ lượt tìm kiếm
+    )
+
+    query = db.query(Products)
+
+    if brand:
+        brands = [b.strip() for b in brand.split(",") if b.strip()]
+        if brands:
+            query = query.filter(Products.Brand.in_(brands))
+
+    if min_price is not None:
+        query = query.filter(Products.Price >= min_price)
+    if max_price is not None:
+        query = query.filter(Products.Price <= max_price)
+
+    return (
+        query
+        .outerjoin(search_counts_sq, Products.Product_ID == search_counts_sq.c.pid)
+        .order_by(score_expr.desc())
+        .limit(limit)
+        .all()
+    )

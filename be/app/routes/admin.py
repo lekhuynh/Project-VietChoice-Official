@@ -19,6 +19,7 @@ from app.core.security import require_admin
 from ..services.product_service import (
     search_products_service,
     filter_products_service,
+    get_outstanding_product_service,
 )
 from ..models.products import Products
 
@@ -147,3 +148,23 @@ def admin_filter_products_by_category(
         "count": len(results),
         "results": results,
     }
+
+"""Đây là endpoint lấy danh sách sản phẩm nổi bật dựa trên điểm số AI và lượt tìm kiếm"""
+@router.get("/products/outstanding", dependencies=[Depends(require_admin)])
+def admin_outstanding_products(
+    limit: int = Query(10, ge=1, le=50),
+    brand: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    db: Session = Depends(get_db),
+):
+    """Admin: lấy danh sách sản phẩm nổi bật (outstanding: score AI + lượt tìm kiếm) + filter cơ bản."""
+    items = get_outstanding_product_service(
+        db=db,
+        limit=limit,
+        brand=brand,
+        min_price=min_price,
+        max_price=max_price,
+    )
+    results = [_serialize_product(p) for p in items]
+    return {"total": len(results), "results": results}
