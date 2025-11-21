@@ -78,6 +78,8 @@ app.include_router(auth_router.router)
 # Thêm middleware xác thực
 app.add_middleware(AuthMiddleware)
 
+from app.routes import admin
+app.include_router(admin.router)
 
 from app.routes import users
 app.include_router(users.router)
