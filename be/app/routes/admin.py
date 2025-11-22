@@ -1,14 +1,21 @@
 from __future__ import annotations
-from typing import Optional
-
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from typing import Optional
+from datetime import datetime
 
-from app.database import get_db
+from ..database import get_db
+from ..models.products import Products
 from app.core.security import require_admin
-from app.models.products import Products
+from app.core.security import require_admin as get_current_admin
 
-# Services
+from ..services.product_service import (
+    search_products_service,
+    filter_products_service,
+    get_outstanding_product_service,
+    get_sentiment_by_category,
+)
+
 from app.services.auto_update_service import auto_update_products
 from app.services.system_flag_service import (
     disable_auto_update,
@@ -184,12 +191,7 @@ def admin_filter_products_by_category(
     results = [_serialize_product(p) for p in items]
     return {"total": total, "count": len(results), "results": results}
 
-
-# =====================================================================
-# 5) OUTSTANDING PRODUCTS
-# =====================================================================
-
-@router.get("/products/outstanding", operation_id="admin_outstanding_products")
+@router.get("/products/outstanding", dependencies=[Depends(require_admin)])
 def admin_outstanding_products(
     limit: int = Query(10, ge=1, le=50),
     brand: Optional[str] = None,
@@ -198,6 +200,7 @@ def admin_outstanding_products(
     db: Session = Depends(get_db),
     _: dict = Depends(require_admin)
 ):
+
     items = get_outstanding_product_service(
         db=db,
         limit=limit,
@@ -205,4 +208,44 @@ def admin_outstanding_products(
         min_price=min_price,
         max_price=max_price,
     )
-    return {"total": len(items), "results": [_serialize_product(p) for p in items]}
+    results = [_serialize_product(p) for p in items]
+    return {"total": len(results), "results": results}
+"""Chức năng thống kê tỷ lệ cảm xúc theo danh mục sản phẩm cho admin."""
+
+@router.get("/analytics/sentiment-by-category", dependencies=[Depends(require_admin)])
+def analytics_sentiment_by_category(
+    group_by: str = Query("category", regex="^(category|lv1|lv2|lv3|lv4|lv5)$"),
+    lv1: Optional[str] = None,
+    lv2: Optional[str] = None,
+    lv3: Optional[str] = None,
+    lv4: Optional[str] = None,
+    lv5: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    min_count: int = Query(1, ge=1),
+    db: Session = Depends(get_db),
+):
+    # Admin: trả về số liệu để vẽ biểu đồ tỷ lệ cảm xúc theo danh mục (Positive/Neutral/Negative).
+
+    def _parse_dt(val: Optional[str]) -> Optional[datetime]:
+        if not val:
+            return None
+        try:
+            return datetime.fromisoformat(val)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid date format: {val}. Use ISO format YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS",
+            )
+
+    from_dt = _parse_dt(from_date)
+    to_dt = _parse_dt(to_date)
+
+    return get_sentiment_by_category(
+        db=db,
+        lv1=lv1, lv2=lv2, lv3=lv3, lv4=lv4, lv5=lv5,
+        from_date=from_dt,
+        to_date=to_dt,
+        group_by=group_by,
+        min_count=min_count,
+    )
