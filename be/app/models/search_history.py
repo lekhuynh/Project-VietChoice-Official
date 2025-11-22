@@ -11,7 +11,10 @@ class Search_History(Base):
     User_ID = Column(Integer, ForeignKey("Users.User_ID", ondelete="CASCADE"))
     Query = Column(UnicodeText)
     Result_Count = Column(Integer, default=0)
-    Created_At = Column(DateTime, server_default=func.sysutcdatetime())
+    Created_At = Column(
+        DateTime(timezone=True),
+        server_default=func.sysutcdatetime()
+    )
 
     # Relationships
     user = relationship("Users", back_populates="search_history")

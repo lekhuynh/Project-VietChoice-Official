@@ -1,10 +1,24 @@
+from datetime import timezone
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from app.core.security import get_current_user
 from app.database import get_db
 from app.crud import user_reviews as review_crud
 
 router = APIRouter(prefix="/reviews", tags=["Reviews"])
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+
+def _to_vn(dt):
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.astimezone(VN_TZ)
 
 # ============================
 # 1️⃣ CREATE REVIEW
@@ -34,7 +48,7 @@ def create_review(data: dict, db: Session = Depends(get_db), current_user=Depend
         "product_id": review.Product_ID,
         "rating": review.Rating,
         "comment": review.Comment,
-        "created_at": review.Created_At,
+        "created_at": _to_vn(review.Created_At).isoformat() if review.Created_At else None,
         "message": "Đánh giá đã được tạo"
     }
 
@@ -51,7 +65,7 @@ def get_reviews_by_product(product_id: int, db: Session = Depends(get_db)):
             "product_id": r.Product_ID,
             "rating": r.Rating,
             "comment": r.Comment,
-            "created_at": r.Created_At
+            "created_at": _to_vn(r.Created_At).isoformat() if r.Created_At else None
         }
         for r in reviews
     ]
@@ -69,7 +83,7 @@ def get_reviews_by_user(db: Session = Depends(get_db), current_user=Depends(get_
             "product_id": r.Product_ID,
             "rating": r.Rating,
             "comment": r.Comment,
-            "created_at": r.Created_At
+            "created_at": _to_vn(r.Created_At).isoformat() if r.Created_At else None
         }
         for r in reviews
     ]
@@ -98,7 +112,7 @@ def update_review(review_id: int, data: dict, db: Session = Depends(get_db), cur
         "product_id": updated.Product_ID,
         "rating": updated.Rating,
         "comment": updated.Comment,
-        "created_at": updated.Created_At,
+        "created_at": _to_vn(updated.Created_At).isoformat() if updated.Created_At else None,
         "message": "Đã cập nhật đánh giá"
     }
 

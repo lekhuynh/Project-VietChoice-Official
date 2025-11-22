@@ -153,35 +153,3 @@ def auto_update_products(
         f"errors={stats['errors']}"
     )
     return stats
-
-
-def auto_update_sentiment(db: Session, limit: Optional[int] = None) -> Dict[str, Any]:
-    """Chạy lại sentiment cho toàn bộ sản phẩm Tiki (tuần tự)."""
-    products = product_crud.get_all_tiki_products(db)
-    if limit is not None and limit > 0:
-        products = products[:limit]
-
-    stats = {"total": len(products), "updated": 0, "errors": 0, "items": []}
-    for p in products:
-        try:
-            score = update_product_sentiment(db, p.Product_ID)
-            stats["updated"] += 1
-            stats["items"].append(
-                {
-                    "product_id": p.Product_ID,
-                    "external_id": p.External_ID,
-                    "sentiment_score": score,
-                }
-            )
-        except Exception as exc:  # noqa: BLE001
-            db.rollback()
-            stats["errors"] += 1
-            stats["items"].append(
-                {
-                    "product_id": p.Product_ID,
-                    "external_id": p.External_ID,
-                    "status": "error",
-                    "error": str(exc),
-                }
-            )
-    return stats

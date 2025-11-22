@@ -103,11 +103,19 @@ def search_product_local(
     q: str,
     limit: int = Query(20, ge=1, le=50),
     skip: int = Query(0, ge=0),
+    lv1: Optional[str] = None,
+    lv2: Optional[str] = None,
+    lv3: Optional[str] = None,
+    lv4: Optional[str] = None,
+    lv5: Optional[str] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     brand: Optional[str] = None,
     min_rating: Optional[float] = None,
     sort: Optional[str] = None,
+    is_vietnam_origin: Optional[bool] = False,
+    is_vietnam_brand: Optional[bool] = False,
+    positive_over: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_optional_user)
 ):
@@ -121,11 +129,15 @@ def search_product_local(
         keyword=keyword,
         limit=limit,
         skip=skip,
+        lv1=lv1, lv2=lv2, lv3=lv3, lv4=lv4, lv5=lv5,
         min_price=min_price,
         max_price=max_price,
         brand=brand,
         min_rating=min_rating,
-        sort=sort
+        sort=sort,
+        is_vietnam_origin=is_vietnam_origin,
+        is_vietnam_brand=is_vietnam_brand,
+        positive_over=positive_over,
     )
 
     results = [_serialize_product(p) for p in items]

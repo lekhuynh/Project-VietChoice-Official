@@ -8,7 +8,7 @@ from ..models.products import Products
 from app.models.categories import Categories
 from app.models.search_history_products import Search_History_Products
 
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, literal_column, text
 
 def get_by_id(db: Session, product_id: int) -> Optional[Products]:
     return db.query(Products).filter(Products.Product_ID == product_id).first()
@@ -225,6 +225,11 @@ def search_products_by_keyword_and_filters(
     keyword: Optional[str] = None,
     limit: int = 20,
     skip: int = 0,
+    lv1=None,
+    lv2=None,
+    lv3=None,
+    lv4=None,
+    lv5=None,
     brand: Optional[str] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
@@ -235,6 +240,22 @@ def search_products_by_keyword_and_filters(
     positive_over: Optional[int] = None
 ):
     query = db.query(Products)
+
+    # Join categories only when needed to avoid unnecessary cost
+    if any([lv1, lv2, lv3, lv4, lv5]):
+        query = query.join(Categories, Products.Category_ID == Categories.Category_ID)
+
+    # --- CATEGORY FILTER ---
+    if lv5:
+        query = query.filter(Categories.Category_Lv5 == lv5)
+    elif lv4:
+        query = query.filter(Categories.Category_Lv4 == lv4)
+    elif lv3:
+        query = query.filter(Categories.Category_Lv3 == lv3)
+    elif lv2:
+        query = query.filter(Categories.Category_Lv2 == lv2)
+    elif lv1:
+        query = query.filter(Categories.Category_Lv1 == lv1)
 
     # --- SEARCH ---
     if keyword:
@@ -309,7 +330,8 @@ def get_tiki_products_older_than(db: Session, *, hours: int) -> Sequence[Product
             Products.Source == "Tiki",
             Products.External_ID.isnot(None),
             or_(
-                Products.Updated_At <= func.dateadd(func.hour, -hours, func.sysutcdatetime()),
+                # SQL Server dateadd needs the datepart as bare literal, not bound param
+                Products.Updated_At <= func.dateadd(text("hour"), -hours, func.sysutcdatetime()),
                 Products.Updated_At.is_(None),
             ),
         )

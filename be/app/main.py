@@ -52,7 +52,7 @@ scheduler: Optional[AsyncIOScheduler] = None
 
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import SessionLocal
 from app.services.auto_update_service import auto_update_products
@@ -65,12 +65,12 @@ def start_scheduler() -> None:
 
     @scheduler.scheduled_job(
         "interval",
-        minutes=10,          # PROD: 10 phút 1 lần (hoặc hours=1 cho nhẹ)
+        minutes=5,          # PROD: 10 phút 1 lần (hoặc hours=1 cho nhẹ)
         max_instances=1,     # đảm bảo không overlap
         coalesce=True,       # nếu lỡ trễ thì gộp 1 lần
     )
     def scheduled_update() -> None:
-        print(f"[Scheduler] Job triggered at {datetime.now().isoformat(timespec='seconds')}")
+        print(f"[Scheduler] Job triggered at {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
         db = SessionLocal()
         try:
             if is_auto_update_enabled(db):

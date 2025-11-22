@@ -10,12 +10,12 @@ from ..models.search_history import Search_History
 from ..models.search_history_products import Search_History_Products
 from ..models.favorites import Favorites
 from ..models.user_reviews import User_Reviews
-
+from datetime import timezone
 
 def get_user_statistics(db: Session, active_days: int = 30) -> Dict[str, int]:
     """Return basic user stats: total and active within N days."""
     total = db.query(func.count(Users.User_ID)).scalar() or 0
-    since = datetime.utcnow() - timedelta(days=active_days)
+    since = datetime.now(timezone.utc) - timedelta(days=active_days)
     # Active = users having at least one search since 'since'
     active = (
         db.query(func.count(func.distinct(Search_History.User_ID)))
@@ -97,7 +97,7 @@ def purge_inactive_products(db: Session, months: int = 3, dry_run: bool = True) 
     Warning: Deleting may violate FKs (Favorites, Reviews). Default is dry_run.
     Returns number of products that would be deleted (or were deleted if dry_run=False).
     """
-    since = datetime.utcnow() - timedelta(days=30 * months)
+    since = datetime.now(timezone.utc) - timedelta(days=30 * months)
 
     # Products with no search history link since 'since'
     recent_product_ids = (

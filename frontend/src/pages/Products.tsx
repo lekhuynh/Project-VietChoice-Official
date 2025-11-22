@@ -5,7 +5,7 @@ import CategoryTree from '../components/products/CategoryTree';
 import { type Product } from '../types';
 import { fetchCategoryTree, type CategoryNode } from '../api/categories';
 import { fetchProductsByCategoryAndFilters, type DbProduct, type ProductFilterParams } from '../api/products_filters';
-import { fetchLocalProducts, type ProductMin, type ProductSearchInputType } from '../api/products';
+import { fetchLocalProducts, type LocalSearchParams, type ProductMin, type ProductSearchInputType } from '../api/products';
 
 const formatPrice = (v?: number) => {
   if (v === undefined || v === null) return '-';
@@ -95,7 +95,23 @@ const Products: React.FC = () => {
     return params;
   }, [selectedPath]);
 
+  const buildSearchFilters = useMemo(() => ({
+    ...currentCategoryParams,
+    brand: brand || undefined,
+    min_price: minPrice,
+    max_price: maxPrice,
+    min_rating: minRating,
+    sort,
+    is_vietnam_origin: isVnOrigin || undefined,
+    is_vietnam_brand: isVnBrand || undefined,
+    positive_over: positiveOver,
+  }), [brand, currentCategoryParams, isVnBrand, isVnOrigin, maxPrice, minPrice, minRating, positiveOver, sort]);
+
   useEffect(() => {
+    if (searchInsight) {
+      fetchSearchPage(1, searchInsight.query, buildSearchFilters);
+      return;
+    }
     applyFilters(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCategoryParams]);
@@ -105,20 +121,20 @@ const Products: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const sortValue = overrides?.sort ?? sort;
       const skip = (targetPage - 1) * pageSize;
+      const sortValue = overrides?.sort ?? sort;
       const data = await fetchProductsByCategoryAndFilters({
         ...currentCategoryParams,
-        brand: brand || undefined,
-        min_price: minPrice,
-        max_price: maxPrice,
-        min_rating: minRating,
+        brand: overrides?.brand ?? (brand || undefined),
+        min_price: overrides?.min_price ?? minPrice,
+        max_price: overrides?.max_price ?? maxPrice,
+        min_rating: overrides?.min_rating ?? minRating,
         sort: sortValue,
         skip,
-        limit: pageSize,
-        is_vietnam_origin: isVnOrigin || undefined,
-        is_vietnam_brand: isVnBrand || undefined,
-        positive_over: positiveOver,
+        limit: overrides?.limit ?? pageSize,
+        is_vietnam_origin: overrides?.is_vietnam_origin ?? (isVnOrigin || undefined),
+        is_vietnam_brand: overrides?.is_vietnam_brand ?? (isVnBrand || undefined),
+        positive_over: overrides?.positive_over ?? positiveOver,
       });
       setProducts(data.results.map(mapDbToProduct));
       setTotal(Number(data.total) || data.results.length);
@@ -138,17 +154,22 @@ const Products: React.FC = () => {
       setSearchInsight(null);
       return applyFilters(1);
     }
-    return fetchSearchPage(1, normalized);
+    setSearchInsight(null);
+    return fetchSearchPage(1, normalized, buildSearchFilters);
   };
 
-  const fetchSearchPage = async (targetPage: number, keyword?: string) => {
+  const fetchSearchPage = async (targetPage: number, keyword?: string, filters?: LocalSearchParams & ProductFilterParams) => {
     const normalized = (keyword ?? searchTerm).trim();
     if (!normalized) return;
     setLoading(true);
     setError(null);
     try {
       const skip = (targetPage - 1) * pageSize;
-      const response = await fetchLocalProducts(normalized, pageSize, skip);
+      const response = await fetchLocalProducts(normalized, {
+        skip,
+        limit: pageSize,
+        ...(filters ?? buildSearchFilters),
+      });
       const payload: SearchIntentInsight = {
         query: response.query,
         refinedQuery: response.refined_query ?? null,
@@ -181,7 +202,7 @@ const Products: React.FC = () => {
 
   const handlePageChange = (p: number) => {
     if (searchInsight) {
-      fetchSearchPage(p);
+      fetchSearchPage(p, searchInsight.query || searchTerm.trim(), buildSearchFilters);
       return;
     }
     applyFilters(p);
@@ -322,9 +343,47 @@ const Products: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex gap-2 pt-1">
-                  <button onClick={() => applyFilters(1)} className="flex-1 px-3 py-2 bg-emerald-600 text-white rounded-md text-sm">Áp dụng</button>
                   <button
-                    onClick={() => { setBrand(''); setMinPrice(undefined); setMaxPrice(undefined); setMinRating(undefined); setIsVnOrigin(false); setIsVnBrand(false); setPositiveOver(undefined); setSort(undefined); applyFilters(1, { sort: undefined }); }}
+                    onClick={() => {
+                      const keyword = (searchInsight?.query || searchTerm).trim();
+                      if (searchInsight && keyword) {
+                        fetchSearchPage(1, keyword, buildSearchFilters);
+                      } else {
+                        applyFilters(1);
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 bg-emerald-600 text-white rounded-md text-sm"
+                  >
+                    Áp dụng
+                  </button>
+                  <button
+                    onClick={() => {
+                      setBrand('');
+                      setMinPrice(undefined);
+                      setMaxPrice(undefined);
+                      setMinRating(undefined);
+                      setIsVnOrigin(false);
+                      setIsVnBrand(false);
+                      setPositiveOver(undefined);
+                      setSort(undefined);
+                      const clearedFilters = {
+                        ...currentCategoryParams,
+                        brand: undefined,
+                        min_price: undefined,
+                        max_price: undefined,
+                        min_rating: undefined,
+                        sort: undefined,
+                        is_vietnam_origin: undefined,
+                        is_vietnam_brand: undefined,
+                        positive_over: undefined,
+                      };
+                      const keyword = (searchInsight?.query || searchTerm).trim();
+                      if (searchInsight && keyword) {
+                        fetchSearchPage(1, keyword, clearedFilters);
+                      } else {
+                        applyFilters(1, clearedFilters);
+                      }
+                    }}
                     className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md text-sm"
                   >
                     Xóa lọc
@@ -343,13 +402,31 @@ const Products: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button
                   className={`px-3 py-1.5 rounded-full text-xs border ${!sort ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-300 hover:bg-gray-50'}`}
-                  onClick={() => { setSort(undefined); applyFilters(1, { sort: undefined }); }}
+                  onClick={() => {
+                    setSort(undefined);
+                    const keyword = (searchInsight?.query || searchTerm).trim();
+                    const filters = { ...buildSearchFilters, sort: undefined };
+                    if (searchInsight && keyword) {
+                      fetchSearchPage(1, keyword, filters);
+                    } else {
+                      applyFilters(1, { sort: undefined });
+                    }
+                  }}
                 >
                   Mặc định
                 </button>
                 <button
                   className={`px-3 py-1.5 rounded-full text-xs border ${sort === 'rating_desc' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-300 hover:bg-gray-50'}`}
-                  onClick={() => { setSort('rating_desc'); applyFilters(1, { sort: 'rating_desc' }); }}
+                  onClick={() => {
+                    setSort('rating_desc');
+                    const keyword = (searchInsight?.query || searchTerm).trim();
+                    const filters = { ...buildSearchFilters, sort: 'rating_desc' as ProductFilterParams['sort'] };
+                    if (searchInsight && keyword) {
+                      fetchSearchPage(1, keyword, filters);
+                    } else {
+                      applyFilters(1, { sort: 'rating_desc' });
+                    }
+                  }}
                 >
                   Đánh giá
                 </button>
@@ -358,7 +435,13 @@ const Products: React.FC = () => {
                   onClick={() => {
                     const next = sort === 'price_asc' ? 'price_desc' : 'price_asc';
                     setSort(next as any);
-                    applyFilters(1, { sort: next });
+                    const keyword = (searchInsight?.query || searchTerm).trim();
+                    const filters = { ...buildSearchFilters, sort: next as ProductFilterParams['sort'] };
+                    if (searchInsight && keyword) {
+                      fetchSearchPage(1, keyword, filters);
+                    } else {
+                      applyFilters(1, { sort: next });
+                    }
                   }}
                   title="Sắp xếp theo giá"
                 >

@@ -72,7 +72,7 @@ export const fetchSearchProducts = async (
       { credentials: 'include' }
     );
     if (!response.ok) {
-      throw new Error('Kh?ng th? t?m ki?m s?n ph?m.');
+      throw new Error('Không thể tìm kiếm sản phẩm.');
     }
     const data = (await response.json()) as ProductSearchResponse<ProductMin> & { message?: string };
 
@@ -237,18 +237,68 @@ export const removeFavorite = async (productId: number): Promise<void> => {
     throw new Error('Xóa kh?i danh sách yêu thích th?t b?i.');
   }
 };
-
-
+
+
+
+
+export interface LocalSearchParams {
+  limit?: number;
+  skip?: number;
+  lv1?: string;
+  lv2?: string;
+  lv3?: string;
+  lv4?: string;
+  lv5?: string;
+  min_price?: number;
+  max_price?: number;
+  brand?: string;
+  min_rating?: number;
+  sort?: string;
+  is_vietnam_origin?: boolean;
+  is_vietnam_brand?: boolean;
+  positive_over?: number;
+}
+
 export const fetchLocalProducts = async (
   query: string,
-  limit = 20,
-  skip = 0
+  params: LocalSearchParams = {}
 ): Promise<ProductSearchResponse<ProductMin>> => {
   try {
     const usp = new URLSearchParams();
     usp.set("q", query);
+    const {
+      limit = 20,
+      skip = 0,
+      lv1,
+      lv2,
+      lv3,
+      lv4,
+      lv5,
+      min_price,
+      max_price,
+      brand,
+      min_rating,
+      sort,
+      is_vietnam_origin,
+      is_vietnam_brand,
+      positive_over,
+    } = params;
+
     usp.set("limit", String(limit));
     usp.set("skip", String(skip));
+    if (lv1) usp.set("lv1", lv1);
+    if (lv2) usp.set("lv2", lv2);
+    if (lv3) usp.set("lv3", lv3);
+    if (lv4) usp.set("lv4", lv4);
+    if (lv5) usp.set("lv5", lv5);
+    if (min_price !== undefined) usp.set("min_price", String(min_price));
+    if (max_price !== undefined) usp.set("max_price", String(max_price));
+    if (brand) usp.set("brand", brand);
+    if (min_rating !== undefined) usp.set("min_rating", String(min_rating));
+    if (sort) usp.set("sort", sort);
+    if (is_vietnam_origin !== undefined) usp.set("is_vietnam_origin", String(is_vietnam_origin));
+    if (is_vietnam_brand !== undefined) usp.set("is_vietnam_brand", String(is_vietnam_brand));
+    if (positive_over !== undefined) usp.set("positive_over", String(positive_over));
     const response = await fetch(
       `${API_BASE_URL}/products/search/local?${usp.toString()}`,
       { credentials: "include" }

@@ -1,16 +1,37 @@
+from datetime import timezone
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..core.security import get_current_user, get_optional_user
 from ..crud import search_history as history_crud
+from ..database import get_db
 from ..models.product_view import Product_Views
 from ..models.products import Products
-from ..core.security import get_optional_user, get_current_user
 
 router = APIRouter(prefix="/users", tags=["User History"])
 
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+
+
+def _to_vn(dt):
+    """
+    Convert datetime to Vietnam timezone.
+    - If naive: treat as already Vietnam local and attach tzinfo.
+    - If aware: convert to Vietnam timezone.
+    """
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=VN_TZ)
+    else:
+        dt = dt.astimezone(VN_TZ)
+    return dt.isoformat()
+
+
 # ======================================================
-# 1️⃣ LỊCH SỬ TÌM KIẾM
+# 1) LỊCH SỬ TÌM KIẾM
 # ======================================================
 @router.get("/search")
 def get_my_search_history(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
@@ -30,7 +51,7 @@ def get_my_search_history(db: Session = Depends(get_db), current_user=Depends(ge
             "History_ID": h.History_ID,
             "Query": h.Query,
             "Result_Count": h.Result_Count,
-            "Created_At": h.Created_At,
+            "Created_At": _to_vn(h.Created_At),
             "Products": [
                 {
                     "Product_ID": p.Product_ID,
@@ -45,7 +66,7 @@ def get_my_search_history(db: Session = Depends(get_db), current_user=Depends(ge
 
 
 # ======================================================
-# 2️⃣ LỊCH SỬ ĐÃ XEM
+# 2) LỊCH SỬ ĐÃ XEM
 # ======================================================
 @router.get("/viewed")
 def get_my_view_history(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
@@ -67,7 +88,7 @@ def get_my_view_history(db: Session = Depends(get_db), current_user=Depends(get_
     result = []
     for v, p in views:
         result.append({
-            "Viewed_At": v.Viewed_At,
+            "Viewed_At": _to_vn(v.Viewed_At),
             "Product_ID": p.Product_ID,
             "Product_Name": p.Product_Name,
             "Image_URL": p.Image_URL,
@@ -79,37 +100,37 @@ def get_my_view_history(db: Session = Depends(get_db), current_user=Depends(get_
 
 
 # ======================================================
-# 3️⃣ XOÁ TOÀN BỘ HOẶC 1 LỊCH SỬ TÌM KIẾM
+# 3) XÓA TOÀN BỘ HOẶC 1 LỊCH SỬ TÌM KIẾM
 # ======================================================
 @router.delete("/delete/search/{history_id:int}")
 def delete_search_history(history_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     """
-    Xoá 1 lịch sử tìm kiếm cụ thể (theo History_ID).
+    Xóa 1 lịch sử tìm kiếm cụ thể (theo History_ID).
     """
     history = history_crud.get_by_id(db, history_id)
     if not history or history.User_ID != current_user.User_ID:
         raise HTTPException(status_code=404, detail="Không tìm thấy lịch sử tìm kiếm này")
     db.delete(history)
     db.commit()
-    return {"message": f"Đã xoá lịch sử tìm kiếm ID {history_id}"}
+    return {"message": f"Đã xóa lịch sử tìm kiếm ID {history_id}"}
 
 
 @router.delete("/delete/search")
 def delete_all_search_history(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     """
-    Xoá toàn bộ lịch sử tìm kiếm của user hiện tại.
+    Xóa toàn bộ lịch sử tìm kiếm của user hiện tại.
     """
     history_crud.delete_all_by_user(db, current_user.User_ID)
-    return {"message": "Đã xoá tất cả lịch sử tìm kiếm"}
+    return {"message": "Đã xóa tất cả lịch sử tìm kiếm"}
 
 
 # ======================================================
-# 4️⃣ XOÁ LỊCH SỬ SẢN PHẨM ĐÃ XEM
+# 4) XÓA LỊCH SỬ SẢN PHẨM ĐÃ XEM
 # ======================================================
 @router.delete("/delete/viewed/{product_id:int}")
 def delete_view_history_item(product_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     """
-    Xoá 1 sản phẩm trong lịch sử đã xem.
+    Xóa 1 sản phẩm trong lịch sử đã xem.
     """
     view = db.query(Product_Views).filter(
         Product_Views.Product_ID == product_id,
@@ -119,14 +140,14 @@ def delete_view_history_item(product_id: int, db: Session = Depends(get_db), cur
         raise HTTPException(status_code=404, detail="Không tìm thấy lịch sử xem sản phẩm này")
     db.delete(view)
     db.commit()
-    return {"message": f"Đã xoá sản phẩm ID {product_id} khỏi lịch sử xem"}
+    return {"message": f"Đã xóa sản phẩm ID {product_id} khỏi lịch sử xem"}
 
 
 @router.delete("/delete/viewed")
 def delete_all_view_history(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     """
-    Xoá toàn bộ lịch sử xem sản phẩm của user hiện tại.
+    Xóa toàn bộ lịch sử xem sản phẩm của user hiện tại.
     """
     db.query(Product_Views).filter(Product_Views.User_ID == current_user.User_ID).delete()
     db.commit()
-    return {"message": "Đã xoá tất cả lịch sử xem sản phẩm"}
+    return {"message": "Đã xóa tất cả lịch sử xem sản phẩm"}

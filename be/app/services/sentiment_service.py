@@ -223,12 +223,4 @@ def update_product_sentiment(db: Session, product_id: int) -> Optional[float]:
     return avg
 
 
-def analyze_bulk(comments: Iterable[str]) -> List[float]:
-    texts = [c for c in comments if c]
-    if not texts:
-        return []
-    scores = _score_with_model(texts)
-    if scores is not None:
-        return [float(s) for s in scores]
-    return [analyze_comment(c) for c in texts]
 

@@ -9,12 +9,12 @@ AUTO_UPDATE_NAME = "AUTO_UPDATE_ENABLED"
 
 def enable_auto_update(db: Session) -> bool:
     flag = set_flag(db, AUTO_UPDATE_NAME, True)
-    return bool(flag.Flag_Value)
+    return True
 
 
 def disable_auto_update(db: Session) -> bool:
     flag = set_flag(db, AUTO_UPDATE_NAME, False)
-    return bool(flag.Flag_Value)
+    return True
 
 
 def is_auto_update_enabled(db: Session) -> bool:
