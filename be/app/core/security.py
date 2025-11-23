@@ -43,14 +43,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
+
+    # Bỏ qua preflight (OPTIONS)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         token = _extract_token(request)
         if token:
             user_id = _get_user_id_from_token(token)
             if user_id:
-                # Attach for downstream usage
                 request.state.user_id = user_id
-        response = await call_next(request)
-        return response
+
+        return await call_next(request)
+
 
 
 async def get_current_user(request: Request, db: Session = Depends(get_db)) -> Users:

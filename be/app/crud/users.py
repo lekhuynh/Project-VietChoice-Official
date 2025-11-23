@@ -16,7 +16,7 @@ def get_by_email(db: Session, email: str) -> Optional[Users]:
 
 def list_users(db: Session, skip: int = 0, limit: int = 100) -> Sequence[Users]:
     """List users with pagination."""
-    return db.query(Users).offset(skip).limit(limit).all()
+    return db.query(Users).order_by(Users.User_ID).offset(skip).limit(limit).all()
 
 
 def create_user(db: Session, *, email: str, name: str, password_plain: str, role: str = "user") -> Users:

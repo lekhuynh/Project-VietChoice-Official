@@ -63,3 +63,43 @@
 #    → Thực hiện cập nhật toàn bộ sản phẩm trong DB.
 # ---------------------------------------------------------------
 # ===============================================================
+# app/services/auto_update_service.py
+
+from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
+from ..crud import products as product_crud
+from ..services import sentiment_service
+
+def auto_update_sentiment(db: Session):
+    """
+    Tự động cập nhật sentiment cho các sản phẩm cũ hơn 24h
+    """
+    try:
+        # Lấy thời điểm 24h trước
+        cutoff_time = datetime.now() - timedelta(hours=24)
+        
+        # Lấy các sản phẩm cần cập nhật (có Updated_At cũ hơn 24h hoặc chưa có sentiment)
+        products_to_update = product_crud.get_products_need_sentiment_update(db, cutoff_time)
+        
+        updated_count = 0
+        for product in products_to_update:
+            try:
+                # Cập nhật sentiment cho sản phẩm
+                sentiment_service.update_product_sentiment(db, product.Product_ID)
+                updated_count += 1
+            except Exception as e:
+                print(f"Error updating sentiment for product {product.Product_ID}: {e}")
+                continue
+        
+        return {
+            "status": "success",
+            "message": f"Auto-update completed. Updated {updated_count} products.",
+            "updated_count": updated_count,
+            "total_checked": len(products_to_update)
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Auto-update failed: {str(e)}"
+        }

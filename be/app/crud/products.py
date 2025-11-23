@@ -1,9 +1,9 @@
 from typing import Optional, Sequence, Dict, Any
 
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 
 from ..models.products import Products
-
 from app.models.categories import Categories
 
 
@@ -16,7 +16,7 @@ def get_by_external_id(db: Session, external_id: int) -> Optional[Products]:
 
 
 def list_products(db: Session, skip: int = 0, limit: int = 100) -> Sequence[Products]:
-    return db.query(Products).offset(skip).limit(limit).all()
+    return db.query(Products).order_by(Products.Product_ID).offset(skip).limit(limit).all()
 
 
 def create_product(db: Session, data: Dict[str, Any]) -> Products:
@@ -46,6 +46,7 @@ def get_products_by_category(db: Session, category_id: int, limit: int = 20, ski
     return (
         db.query(Products)
         .filter(Products.Category_ID == category_id)
+        .order_by(Products.Product_ID)
         .offset(skip)
         .limit(limit)
         .all()
@@ -103,7 +104,7 @@ def update_sentiment(db: Session, external_id: int, score: Optional[float], labe
 
 def get_all(db: Session):
     """Trả về toàn bộ danh sách sản phẩm."""
-    return db.query(Products).all()
+    return db.query(Products).order_by(Products.Product_ID).all()
 
 
 def get_all_tiki_products(db: Session):
@@ -111,7 +112,7 @@ def get_all_tiki_products(db: Session):
     return db.query(Products).filter(
         Products.Source == "Tiki",
         Products.External_ID.isnot(None)
-    ).all()
+    ).order_by(Products.Product_ID).all()
 
 
 def delete(db: Session, product_id: int) -> bool:
@@ -245,5 +246,8 @@ def get_products_by_category_and_filters(
         query = query.order_by(Products.Price.desc())
     elif sort == "rating_desc":
         query = query.order_by(Products.Avg_Rating.desc())
+    else:
+        # Default order for MSSQL compatibility
+        query = query.order_by(Products.Product_ID)
 
     return query.all()
