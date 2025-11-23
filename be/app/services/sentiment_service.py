@@ -136,11 +136,12 @@ def analyze_comment(text: str) -> float:
 
 
 def label_sentiment(score: float) -> str:
+    """Return normalized labels used across the app and analytics."""
     if score >= 0.6:
-        return "Tốt"
+        return "positive"
     if score >= 0.2:
-        return "Trung bình"
-    return "Kém"
+        return "neutral"
+    return "negative"
 
 
 def _collect_comments_for_product(db: Session, product: Products) -> List[str]:

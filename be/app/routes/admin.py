@@ -189,7 +189,14 @@ def admin_filter_products_by_category(
         positive_over=positive_over,
     )
     results = [_serialize_product(p) for p in items]
-    return {"total": total, "count": len(results), "results": results}
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "count": len(results),
+        "results": results,
+    }
+
 
 @router.get("/products/outstanding", dependencies=[Depends(require_admin)])
 def admin_outstanding_products(
@@ -210,7 +217,11 @@ def admin_outstanding_products(
     )
     results = [_serialize_product(p) for p in items]
     return {"total": len(results), "results": results}
-"""Chức năng thống kê tỷ lệ cảm xúc theo danh mục sản phẩm cho admin."""
+
+
+# =====================================================================
+# 5) SENTIMENT ANALYTICS
+# =====================================================================
 
 @router.get("/analytics/sentiment-by-category", dependencies=[Depends(require_admin)])
 def analytics_sentiment_by_category(
@@ -225,8 +236,6 @@ def analytics_sentiment_by_category(
     min_count: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
-    # Admin: trả về số liệu để vẽ biểu đồ tỷ lệ cảm xúc theo danh mục (Positive/Neutral/Negative).
-
     def _parse_dt(val: Optional[str]) -> Optional[datetime]:
         if not val:
             return None

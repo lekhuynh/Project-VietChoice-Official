@@ -155,10 +155,24 @@ def get_sentiment_by_category(
     """
 
     # Chuẩn hóa sentiment về 3 nhãn để tổng hợp
-    sentiment_lower = func.lower(func.coalesce(Products.Sentiment_Label, ""))
-    positive_count = func.sum(case((sentiment_lower == "positive", 1), else_=0))
-    negative_count = func.sum(case((sentiment_lower == "negative", 1), else_=0))
-    neutral_count = func.sum(case(((sentiment_lower != "positive") & (sentiment_lower != "negative"), 1), else_=0))
+    sentiment_lower = func.lower(func.trim(func.coalesce(Products.Sentiment_Label, "")))
+
+    # Map both English and Vietnamese labels into unified buckets
+    positive_aliases = [
+        "positive", "tốt", "tot", "tích cực", "tich cuc", "tichcuc",
+        "tuyệt vời", "tuyet voi", "hài lòng", "hai long",
+    ]
+    negative_aliases = [
+        "negative", "kém", "kem", "xấu", "xau", "tệ", "te",
+        "thất vọng", "that vong", "không tốt", "khong tot",
+    ]
+
+    positive_pred = sentiment_lower.in_(positive_aliases)
+    negative_pred = sentiment_lower.in_(negative_aliases)
+
+    positive_count = func.sum(case((positive_pred, 1), else_=0))
+    negative_count = func.sum(case((negative_pred, 1), else_=0))
+    neutral_count = func.sum(case(((~positive_pred) & (~negative_pred), 1), else_=0))
 
     query = db.query(
         Categories.Category_ID,
