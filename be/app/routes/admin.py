@@ -23,11 +23,6 @@ from app.services.system_flag_service import (
     get_auto_update_status,
 )
 from app.services import user_service
-from app.services.product_service import (
-    search_products_service,
-    filter_products_service,
-    get_outstanding_product_service,
-)
 
 # =====================================================================
 # ADMIN ROUTER
