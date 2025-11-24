@@ -1,5 +1,5 @@
 # Tổng hợp các thao tác quản trị hệ thống cho admin.
-
+from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -14,7 +14,6 @@ from ..schemas.products import ProductCreate, ProductUpdate
 from ..schemas.users import UserCreate
 from ..models.products import Products
 from ..models.users import Users
-from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import Optional
