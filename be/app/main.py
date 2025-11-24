@@ -13,6 +13,8 @@ try:
     from .database import init_db  # type: ignore
     from .routes import auth as auth_router  # type: ignore
     from .core.security import AuthMiddleware  # type: ignore
+    from .routes import admin, users, products, search_history, favorite, reviews as user_reviews  # type: ignore
+    from .routes.categories import router as category_router  # type: ignore
 except Exception:  # pragma: no cover
     parent_dir = Path(__file__).resolve().parent.parent
     if str(parent_dir) not in sys.path:
@@ -20,9 +22,19 @@ except Exception:  # pragma: no cover
     from app.database import init_db  # type: ignore
     from app.routes import auth as auth_router  # type: ignore
     from app.core.security import AuthMiddleware  # type: ignore
+    from app.routes import admin, users, products, search_history, favorite, reviews as user_reviews  # type: ignore
+    from app.routes.categories import router as category_router  # type: ignore
+
+# app = FastAPI(title="VietChoice API")
+
+# CORS configuration
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173"
+] 
 
 from app.database import SessionLocal
-from app.routes import admin as admin_router
+# from app.routes import admin as admin_router
 from app.routes import favorite
 from app.routes import products
 from app.routes import reviews as user_reviews
@@ -34,16 +46,21 @@ from app.services.system_flag_service import is_auto_update_enabled
 
 app = FastAPI(title="VietChoice API")
 
-origins = ["http://localhost:5173"]
+# origins = ["http://localhost:5173"]
 
+# CORS FIRST
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Auth AFTER
+app.add_middleware(AuthMiddleware)
+
+  
 # ============================================================
 # Scheduler
 # ============================================================
@@ -119,7 +136,6 @@ def on_startup() -> None:
 def read_root() -> JSONResponse:
     return JSONResponse({"message": "VietChoice API is running", "docs_url": "/docs"})
 
-
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon() -> Response:
     return Response(status_code=204)
@@ -139,4 +155,4 @@ app.include_router(search_history.router)
 app.include_router(favorite.router)
 app.include_router(user_reviews.router)
 app.include_router(category_router)
-app.include_router(admin_router.router)
+app.include_router(admin.router)  # ✅ Admin router đã được đăng ký
