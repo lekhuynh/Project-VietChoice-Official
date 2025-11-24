@@ -308,7 +308,7 @@ def get_product_detail(product_id: int, db: Session = Depends(get_db), current_u
     if not product:
         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm trong DB")
     add_view_history(db, current_user, product_id)
-    return {
+    data = {
         "Product_ID": product.Product_ID,
         "Product_Name": product.Product_Name,
         "Brand": product.Brand,
@@ -326,9 +326,12 @@ def get_product_detail(product_id: int, db: Session = Depends(get_db), current_u
         "Description": product.Description,
         "Is_Authentic": product.Is_Authentic,
         "Is_Active": product.Is_Active,
-        "Source": product.Source
+        "Source": product.Source,
+        "Image_Full_URL": product.Image_Full_URL,
     }
-
+    if not product.Is_Active:
+        data["warning"] = "Sản phẩm này hiện không còn hoạt động trên nền tảng gốc."
+    return data
 
 # ============================================================
 # 5️⃣ CẬP NHẬT LẠI ĐIỂM SENTIMENT

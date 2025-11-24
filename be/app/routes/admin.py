@@ -65,8 +65,8 @@ def admin_run_auto_update_now(db: Session = Depends(get_db), _: dict = Depends(r
     stats = auto_update_products(
         db,
         older_than_hours=0,
-        limit=50,
-        workers=4,
+        limit=None,
+        workers=10,
     )
     return {"message": "Auto update executed manually.", "stats": stats}
 
@@ -198,7 +198,7 @@ def admin_filter_products_by_category(
     }
 
 
-@router.get("/products/outstanding", dependencies=[Depends(require_admin)])
+@router.get("/products/outstanding", dependencies=[Depends(require_admin)],operation_id="admin_outstanding_products")
 def admin_outstanding_products(
     limit: int = Query(10, ge=1, le=50),
     brand: Optional[str] = None,
@@ -223,7 +223,7 @@ def admin_outstanding_products(
 # 5) SENTIMENT ANALYTICS
 # =====================================================================
 
-@router.get("/analytics/sentiment-by-category", dependencies=[Depends(require_admin)])
+@router.get("/analytics/sentiment-by-category", dependencies=[Depends(require_admin)],operation_id="admin_analytics_sentiment_by_category")
 def analytics_sentiment_by_category(
     group_by: str = Query("category", regex="^(category|lv1|lv2|lv3|lv4|lv5)$"),
     lv1: Optional[str] = None,

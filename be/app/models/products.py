@@ -45,6 +45,7 @@ class Products(Base):
         onupdate=func.sysutcdatetime()
     )
     Description = Column(UnicodeText)
+    Image_Full_URL = Column(String(1000), nullable=True)
 
     # Relationships
     category = relationship("Categories", back_populates="products")

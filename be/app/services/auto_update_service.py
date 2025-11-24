@@ -24,7 +24,16 @@ def _refresh_single_product(db: Session, product: Products) -> Dict[str, Any]:
         }
 
     summary = get_reviews_summary(int(product.External_ID))
+    
+    #lấy thumbnail và tạo ảnh full-size
+    thumb = detail.get("thumbnail_url")
+    # Tạo ảnh full-size bằng cách bỏ cache/280x280
+    full_img = None
+    if thumb:
+        full_img = thumb.replace("/cache/280x280", "")
     patch = {
+        "Image_URL": thumb,
+        "Image_Full_URL": full_img,
         "Price": detail.get("price"),
         "Avg_Rating": summary.get("rating_average"),
         "Review_Count": summary.get("reviews_count"),

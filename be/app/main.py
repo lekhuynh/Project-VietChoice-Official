@@ -77,7 +77,7 @@ def start_scheduler() -> None:
                 print("[Scheduler] Auto update ENABLED -> running job")
                 stats = auto_update_products(
                     db,
-                    older_than_hours=12,
+                    older_than_hours=8,
                     limit=None,   # hoặc 200/500 nếu muốn batch nhỏ dần
                     workers=8,
                 )

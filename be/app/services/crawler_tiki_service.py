@@ -407,11 +407,11 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
         return None
 
     # ---------------------------
-    # Láº¥y danh má»¥c (breadcrumbs)
+    # Lấy danh mục (breadcrumbs)
     # ---------------------------
     breadcrumbs = product_data.get("breadcrumbs", []) or []
 
-    # âœ… Loáº¡i bá» breadcrumb lÃ  sáº£n pháº©m (category_id == 0 hoáº·c url chá»©a product_id)
+    # ✓ Loại bỏ breadcrumb là sản phẩm (category_id == 0 hoặc url chứa product_id)
     breadcrumbs = [
         b for b in breadcrumbs
         if (isinstance(b.get("category_id"), int) and b.get("category_id") > 0)
@@ -421,7 +421,7 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
     category_id = None
 
     if breadcrumbs:
-        # Map cÃ¡c cáº¥p danh má»¥c
+        # Map các cấp danh mục
         category_dict = {
             "Category_Lv1": breadcrumbs[0].get("name") if len(breadcrumbs) > 0 else None,
             "Category_Lv2": breadcrumbs[1].get("name") if len(breadcrumbs) > 1 else None,
@@ -433,13 +433,13 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
         from ..crud import categories as cat_crud
         from ..services.category_service import create_or_get_category
 
-        # Chuáº©n hÃ³a Category_Path vÃ  Level_Count
+        # Chuẩn hóa Category_Path và Level_Count
         category_data = cat_crud.ensure_path_fields({
             "Source": "Tiki",
             **category_dict
         })
 
-        # Kiá»ƒm tra trÃ¹ng (Source + Category_Path)
+        # Kiểm tra trùng (Source + Category_Path)
         existing = cat_crud.get_by_source_path(
             db,
             source=category_data["Source"],
@@ -458,7 +458,7 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
         category_id = None
 
     # ---------------------------
-    # L?y Rating, Review Count v? Positive Percent (d?ng helper chung)
+    # Lấy Rating, Review Count và Positive Percent (dùng helper chung)
     # ---------------------------
     summary = get_reviews_summary(product_id)
     avg_rating = summary.get("rating_average")
@@ -466,7 +466,7 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
     positive_percent = summary.get("positive_percent")
 
     # ---------------------------
-    # Láº¥y Origin vÃ  Brand Country trong attributes
+    # Lấy Origin và Brand Country trong attributes
     # ---------------------------
     origin, brand_country = None, None
     try:
@@ -497,6 +497,11 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
     except Exception as e:
         print(f"[Warning] Không lấy được mô tả: {e}")
 
+    # xử lý ảnh full từ thumbnail
+
+    thumb = product_data.get("thumbnail_url")
+    image_full = thumb.replace("/cache/280x280", "") if thumb else None
+
     # ---------------------------
     # Chuẩn bị dữ liệu lưu vào DB
     # ---------------------------
@@ -515,6 +520,7 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
         "Positive_Percent": positive_percent,
         "Source": "Tiki",
         "Description": description_clean,
+        "Image_Full_URL": image_full,
     }
 
     product = product_crud.create_or_update_by_external_id(db, product_record)
@@ -639,19 +645,19 @@ def search_and_crawl_tiki_products(db: Session, keyword: str, limit: int = 10) -
             })
 
     # ----------------------
-    # B4: CÃ o sáº£n pháº©m má»›i song song (tá»‘i Ä‘a 5 luá»“ng)
+    # B4: Cào sản phẩm mới song song (tối đa 5 luồng)
     # ----------------------
     from ..database import SessionLocal
 
     def crawl_single(pid: int):
         local_db = SessionLocal()
         try:
-            print(f"[TIKI] â³ CÃ o sáº£n pháº©m ID {pid}...")
+            print(f"[TIKI] ⏳ Cào sản phẩm ID {pid}...")
             result = crawl_and_save_tiki_product(local_db, pid)
             local_db.commit()
             return result
         except Exception as e:
-            print(f"[TIKI] âš ï¸ Lá»—i khi cÃ o ID {pid}: {e}")
+            print(f"[TIKI] ⚠️ Lỗi khi cào ID {pid}: {e}")
             local_db.rollback()
             return None
         finally:
@@ -905,7 +911,8 @@ async def asearch_and_crawl_tiki_products(db: Session, keyword: str, limit: int 
                         description_clean = "\n".join([line.strip() for line in description_clean.splitlines() if line.strip()])
                 except Exception:
                     description_clean = None
-
+                thumb = details.get("thumbnail_url")
+                image_full = thumb.replace("/cache/280x280", "") if thumb else None
                 product_record = {
                     "External_ID": details.get("id"),
                     "Product_Name": details.get("name"),
@@ -921,6 +928,7 @@ async def asearch_and_crawl_tiki_products(db: Session, keyword: str, limit: int 
                     "Positive_Percent": summary.get("positive_percent"),
                     "Source": "Tiki",
                     "Description": description_clean,
+                    "Image_Full_URL": image_full,
                 }
 
                 def save_worker() -> Optional[Dict[str, Any]]:
