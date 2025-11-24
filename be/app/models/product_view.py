@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy import Column, Integer, ForeignKey, DateTime, UniqueConstraint, func
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from ..database import Base
 
 class Product_Views(Base):
@@ -9,7 +9,7 @@ class Product_Views(Base):
     View_ID = Column(Integer, primary_key=True, index=True)
     User_ID = Column(Integer, ForeignKey("Users.User_ID", ondelete="CASCADE"), nullable=False)
     Product_ID = Column(Integer, ForeignKey("Products.Product_ID", ondelete="CASCADE"), nullable=False)
-    Viewed_At = Column(DateTime, default=datetime.utcnow)
+    Viewed_At = Column(DateTime(timezone=False), server_default=func.sysutcdatetime())
 
     __table_args__ = (
         UniqueConstraint("User_ID", "Product_ID", name="UQ_ProductViews_User_Product"),

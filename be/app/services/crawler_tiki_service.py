@@ -203,8 +203,20 @@ async def aget_reviews_summary(product_id: int, session: Optional[aiohttp.Client
         if own:
             await session.close()
 
+
+def get_reviews_summary(product_id: int) -> Dict[str, Any]:
+    """Sync wrapper for aget_reviews_summary to reuse in sync flows."""
+    try:
+        return asyncio.run(aget_reviews_summary(product_id))
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(aget_reviews_summary(product_id))
+        finally:
+            loop.close()
+
 def fetch_tiki_reviews(product_id: int, limit: int = 20, page: int = 1, retry: int = 1) -> Optional[Dict[str, Any]]:
-    """Láº¥y dá»¯ liá»‡u review tá»« API chÃ­nh thá»©c cá»§a Tiki."""
+    """Lấy dữ liệu review từ API chính thức của Tiki."""
     params = {
         "limit": max(1, min(50, limit)),
         "include": "comments",
@@ -446,31 +458,12 @@ def crawl_and_save_tiki_product(db: Session, product_id: int) -> Optional[Dict[s
         category_id = None
 
     # ---------------------------
-    # Láº¥y Rating, Review Count vÃ  Positive Percent tá»« API riÃªng
+    # L?y Rating, Review Count v? Positive Percent (d?ng helper chung)
     # ---------------------------
-    avg_rating, review_count, positive_percent = None, None, None
-    try:
-        review_resp = requests.get(
-            f"https://tiki.vn/api/v2/reviews?product_id={product_id}&include=comments&limit=1",
-            headers=_headers(),
-            timeout=10
-        )
-        if review_resp.status_code == 200:
-            review_json = review_resp.json()
-            avg_rating = review_json.get("rating_average")
-            review_count = review_json.get("reviews_count")
-
-            # âœ… TÃ­nh Positive Percent náº¿u cÃ³ dá»¯ liá»‡u sao
-            stars = review_json.get("stars", {})
-            if stars:
-                # Cáº¥u trÃºc má»—i sao: {"count": int, "percent": int}
-                total = sum([v.get("count", 0) for v in stars.values()])
-                if total > 0:
-                    positive = stars.get("5", {}).get("count", 0) + stars.get("4", {}).get("count", 0)
-                    positive_percent = round((positive / total) * 100, 2)
-                    print(f"[DEBUG] Positive_Percent = {positive_percent}% ({positive}/{total})")
-    except Exception :
-        pass
+    summary = get_reviews_summary(product_id)
+    avg_rating = summary.get("rating_average")
+    review_count = summary.get("reviews_count")
+    positive_percent = summary.get("positive_percent")
 
     # ---------------------------
     # Láº¥y Origin vÃ  Brand Country trong attributes

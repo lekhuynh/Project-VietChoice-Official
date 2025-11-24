@@ -19,3 +19,4 @@ aiohttp
 pyzbar
 Pillow
 google-generativeai
+apscheduler==3.10.4

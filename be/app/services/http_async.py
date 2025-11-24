@@ -10,21 +10,6 @@ import aiohttp
 DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=15)
 
 
-async def get_json(url: str, *, headers: Optional[Dict[str, str]] = None, params: Optional[Dict[str, Any]] = None, retries: int = 1) -> Optional[Dict[str, Any]]:
-    """Simple JSON GET using its own session (useful for one-offs)."""
-    for attempt in range(retries + 1):
-        try:
-            async with aiohttp.ClientSession(timeout=DEFAULT_TIMEOUT) as session:
-                async with session.get(url, headers=headers, params=params) as resp:
-                    if resp.status == 200:
-                        # Some APIs may respond with non-standard content-type
-                        return await resp.json(content_type=None)
-        except Exception:
-            await asyncio.sleep(0.4 * (attempt + 1))
-            continue
-    return None
-
-
 async def get_text(url: str, *, headers: Optional[Dict[str, str]] = None, params: Optional[Dict[str, Any]] = None, retries: int = 1) -> Optional[str]:
     """Simple TEXT GET using its own session (useful for one-offs)."""
     for attempt in range(retries + 1):

@@ -1,8 +1,9 @@
 import { type FC, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { UploadIcon, ImageIcon, XIcon, Loader2Icon } from 'lucide-react';
 import { type Product } from '../../types';
 import { scanProductsByImage, type ProductMin } from '../../api/products';
+import ProductCard from '../products/ProductCard';
 
 const currency = (v?: number) =>
   typeof v === 'number'
@@ -17,6 +18,18 @@ const ImageUploader: FC = () => {
   const [suggestedProducts, setSuggestedProducts] = useState<Product[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+
+  const toUiProduct = (p: ProductMin): Product => ({
+    id: (p as any).Product_ID,
+    name: (p as any).Product_Name,
+    image: (p as any).Image_URL || '',
+    price: currency(typeof (p as any).Price === 'number' ? (p as any).Price : Number((p as any).Price ?? 0)),
+    rating: typeof (p as any).Avg_Rating === 'number' ? (p as any).Avg_Rating : 0,
+    positivePercent: typeof (p as any).Positive_Percent === 'number' ? (p as any).Positive_Percent : 0,
+    sentiment: ((p as any).Sentiment_Label?.toLowerCase() as Product['sentiment']) || undefined,
+    brand: (p as any).Brand,
+    origin: (p as any).Origin,
+  });
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -60,19 +73,10 @@ const ImageUploader: FC = () => {
     setIsLoading(true);
     try {
       const raw = (await scanProductsByImage(selectedImage)) as unknown as any[];
-      const toUi = (p: ProductMin): Product => ({
-        id: (p as any).Product_ID,
-        name: (p as any).Product_Name,
-        image: (p as any).Image_URL || '',
-        price: currency(typeof (p as any).Price === 'number' ? (p as any).Price : Number((p as any).Price ?? 0)),
-        rating: typeof (p as any).Avg_Rating === 'number' ? (p as any).Avg_Rating : 0,
-        positivePercent: 0,
-        sentiment: ((p as any).Sentiment_Label?.toLowerCase() as Product['sentiment']) || undefined,
-      });
       const products = (raw || []).filter((r: any) => r && (r.Product_ID || r.Product_Name));
       const message = (raw || []).find((r: any) => r && typeof r.message === 'string')?.message as string | undefined;
       if (products.length > 0) {
-        const mapped = products.map(toUi);
+        const mapped = products.map(toUiProduct);
         setSuggestedProducts(mapped);
         setOcrResult('Đã nhận diện xong');
         if (mapped.length === 1) {
@@ -83,7 +87,7 @@ const ImageUploader: FC = () => {
         setOcrResult(message);
       } else {
         setSuggestedProducts([]);
-        setOcrResult('Không nhận diện được nội dung trong ảnh. Vui lòng chụp rõ hơn hoặc dùng Quét mã vạch.');
+        setOcrResult('Không nhận diện được nội dung trong ảnh. Hãy chụp rõ hơn hoặc thử quét mã vạch.');
       }
     } catch {
       setOcrResult('Không nhận diện được ảnh');
@@ -93,7 +97,6 @@ const ImageUploader: FC = () => {
     }
   };
 
-  // Tự động xử lý ngay sau khi chọn ảnh
   useEffect(() => {
     if (selectedImage) {
       const id = window.setTimeout(() => {
@@ -101,7 +104,7 @@ const ImageUploader: FC = () => {
       }, 0);
       return () => window.clearTimeout(id);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedImage]);
 
   return (
@@ -167,30 +170,20 @@ const ImageUploader: FC = () => {
       )}
 
       {ocrResult && (
-        <div className="w-full max-w-md mt-6">
+        <div className="w-full max-w-5xl mt-6">
           <div className="bg-gray-100 p-4 rounded-md">
-            <h3 className="font-medium mb-2">Nhận diện:</h3>
+            <h3 className="font-medium mb-2">Kết quả nhận diện</h3>
             <p className="text-gray-700 bg-white p-2 rounded border border-gray-200">{ocrResult}</p>
           </div>
           {suggestedProducts.length > 0 && (
             <div className="mt-6">
-              <h3 className="font-medium mb-3">Sản phẩm gợi ý:</h3>
-              <div className="space-y-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-gray-800">Sản phẩm gợi ý</h3>
+                <span className="text-sm text-gray-500">{suggestedProducts.length} kết quả</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {suggestedProducts.map((product) => (
-                  <Link key={product.id} to={`/product/${product.id}`} className="block bg-white rounded-lg shadow p-3">
-                    <div className="flex">
-                      <img src={product.image} alt={product.name} className="w-16 h-16 object-cover rounded" />
-                      <div className="ml-3">
-                        <h4 className="font-medium hover:text-emerald-600">{product.name}</h4>
-                        <p className="text-emerald-600">{product.price}</p>
-                        <div className="flex items-center mt-1 text-sm">
-                          <span className="ml-1">{product.rating}/5</span>
-                          <span className="mx-2">•</span>
-                          <span>{product.positivePercent}% tích cực</span>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
+                  <ProductCard key={product.id} product={product} />
                 ))}
               </div>
             </div>
@@ -201,4 +194,3 @@ const ImageUploader: FC = () => {
   );
 };
 export default ImageUploader;
-

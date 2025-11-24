@@ -1,18 +1,18 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { SearchIcon, FilterIcon, Star, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import ProductList from '../components/products/ProductList';
 import CategoryTree from '../components/products/CategoryTree';
 import { type Product } from '../types';
 import { fetchCategoryTree, type CategoryNode } from '../api/categories';
 import { fetchProductsByCategoryAndFilters, type DbProduct, type ProductFilterParams } from '../api/products_filters';
-import { fetchSearchProducts, type ProductMin, type ProductSearchInputType } from '../api/products';
+import { fetchLocalProducts, type LocalSearchParams, type ProductMin, type ProductSearchInputType } from '../api/products';
 
 const formatPrice = (v?: number) => {
-  if (v === undefined || v === null) return '—';
+  if (v === undefined || v === null) return '-';
   try {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(v));
   } catch {
-    return `${v} đ`;
+    return `${v} d`;
   }
 };
 
@@ -44,6 +44,9 @@ interface SearchIntentInsight {
   aiMessage?: string | null;
   inputType: ProductSearchInputType;
   count: number;
+  total?: number;
+  skip?: number;
+  limit?: number;
 }
 
 const Products: React.FC = () => {
@@ -65,23 +68,19 @@ const Products: React.FC = () => {
   const [positiveOver, setPositiveOver] = useState<number | undefined>();
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchInsight, setSearchInsight] = useState<SearchIntentInsight | null>(null);
 
   const refinedKeyword = (searchInsight?.refinedQuery ?? '').trim();
-
   const displayKeyword = refinedKeyword || searchInsight?.query || '';
-
   const isChatResponse = !!searchInsight && (searchInsight.inputType === 'chat' || (!!searchInsight.aiMessage && searchInsight.count === 0));
-
-  const totalProducts = searchInsight ? (isChatResponse ? 0 : searchInsight.count) : products.length;
-
-
+  const totalProducts = searchInsight ? (isChatResponse ? 0 : (searchInsight.total ?? searchInsight.count)) : total;
 
   useEffect(() => {
     fetchCategoryTree().then(setCategoryTree).catch(() => setCategoryTree([]));
-    applyFilters();
+    applyFilters(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -96,71 +95,54 @@ const Products: React.FC = () => {
     return params;
   }, [selectedPath]);
 
-  // Re-apply filters when category changes to avoid double-click issues
+  const buildSearchFilters = useMemo(() => ({
+    ...currentCategoryParams,
+    brand: brand || undefined,
+    min_price: minPrice,
+    max_price: maxPrice,
+    min_rating: minRating,
+    sort,
+    is_vietnam_origin: isVnOrigin || undefined,
+    is_vietnam_brand: isVnBrand || undefined,
+    positive_over: positiveOver,
+  }), [brand, currentCategoryParams, isVnBrand, isVnOrigin, maxPrice, minPrice, minRating, positiveOver, sort]);
+
   useEffect(() => {
-    applyFilters();
+    if (searchInsight) {
+      fetchSearchPage(1, searchInsight.query, buildSearchFilters);
+      return;
+    }
+    applyFilters(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCategoryParams]);
 
-  const searchIntentLogs = useMemo(() => {
-
-    if (!searchInsight) return [];
-
-    const logs: string[] = [];
-
-    logs.push(`⚡ [DEBUG] Starting intent analysis for: '${searchInsight.query}'`);
-
-    logs.push('⏳ [DEBUG] Calling Gemini API...');
-
-    const isProductSearch = !isChatResponse;
-
-    const reply = isChatResponse ? searchInsight.aiMessage || '' : 'None';
-
-    logs.push(
-
-      `🧠 [DEBUG] Parsed -> Search: ${isProductSearch} | Product: '${isProductSearch ? refinedKeyword : ''}' | Reply: '${reply || 'None'}'`
-
-    );
-
-    if (isProductSearch) {
-
-      const keyword = refinedKeyword || searchInsight.query;
-
-      logs.push(`✅ [Searching] '${searchInsight.query}' -> Keyword: '${keyword}'`);
-
-      logs.push(`[Search] Tim san pham voi tu khoa: ${keyword}`);
-
-    } else {
-
-      logs.push(`🛑 [Stop Crawl] Chat detected: '${searchInsight.query}'`);
-
-    }
-
-    return logs;
-
-  }, [isChatResponse, refinedKeyword, searchInsight]);
-
-  const applyFilters = async () => {
+  const applyFilters = async (targetPage = 1, overrides?: Partial<ProductFilterParams>) => {
     setSearchInsight(null);
     setLoading(true);
     setError(null);
     try {
+      const skip = (targetPage - 1) * pageSize;
+      const sortValue = overrides?.sort ?? sort;
       const data = await fetchProductsByCategoryAndFilters({
         ...currentCategoryParams,
-        brand: brand || undefined,
-        min_price: minPrice,
-        max_price: maxPrice,
-        min_rating: minRating,
-        sort,
-        is_vietnam_origin: isVnOrigin || undefined,
-        is_vietnam_brand: isVnBrand || undefined,
-        positive_over: positiveOver,
+        brand: overrides?.brand ?? (brand || undefined),
+        min_price: overrides?.min_price ?? minPrice,
+        max_price: overrides?.max_price ?? maxPrice,
+        min_rating: overrides?.min_rating ?? minRating,
+        sort: sortValue,
+        skip,
+        limit: overrides?.limit ?? pageSize,
+        is_vietnam_origin: overrides?.is_vietnam_origin ?? (isVnOrigin || undefined),
+        is_vietnam_brand: overrides?.is_vietnam_brand ?? (isVnBrand || undefined),
+        positive_over: overrides?.positive_over ?? positiveOver,
       });
-      setProducts(data.map(mapDbToProduct));
-      setPage(1);
+      setProducts(data.results.map(mapDbToProduct));
+      setTotal(Number(data.total) || data.results.length);
+      setPage(targetPage);
     } catch (e: any) {
-      setError(e?.message || 'Lỗi tải sản phẩm');
+      setError(e?.message || 'Loi tai san pham');
       setProducts([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -170,22 +152,38 @@ const Products: React.FC = () => {
     const normalized = searchTerm.trim();
     if (!normalized) {
       setSearchInsight(null);
-      return applyFilters();
+      return applyFilters(1);
     }
+    setSearchInsight(null);
+    return fetchSearchPage(1, normalized, buildSearchFilters);
+  };
+
+  const fetchSearchPage = async (targetPage: number, keyword?: string, filters?: LocalSearchParams & ProductFilterParams) => {
+    const normalized = (keyword ?? searchTerm).trim();
+    if (!normalized) return;
     setLoading(true);
     setError(null);
     try {
-      const response = await fetchSearchProducts(normalized);
+      const skip = (targetPage - 1) * pageSize;
+      const response = await fetchLocalProducts(normalized, {
+        skip,
+        limit: pageSize,
+        ...(filters ?? buildSearchFilters),
+      });
       const payload: SearchIntentInsight = {
         query: response.query,
         refinedQuery: response.refined_query ?? null,
         aiMessage: response.ai_message ?? null,
         inputType: response.input_type,
         count: typeof response.count === 'number' ? response.count : response.results.length,
+        total: typeof response.total === 'number' ? response.total : response.results.length,
+        skip: response.skip,
+        limit: response.limit,
       };
-      const treatedAsChat = payload.inputType === 'chat' || (!!payload.aiMessage && payload.count === 0);
+      const treatedAsChat = payload.inputType === 'chat' || (!!payload.aiMessage && (payload.total ?? payload.count) === 0);
       setSearchInsight(payload);
-      setPage(1);
+      setTotal(payload.total ?? payload.count);
+      setPage(targetPage);
       if (treatedAsChat) {
         setProducts([]);
         return;
@@ -193,12 +191,21 @@ const Products: React.FC = () => {
       const items = response.results.map(mapMinToProduct);
       setProducts(items);
     } catch (e: any) {
-      setError(e?.message || 'L?i t?m ki?m');
+      setError(e?.message || 'Loi tim kiem');
       setSearchInsight(null);
       setProducts([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChange = (p: number) => {
+    if (searchInsight) {
+      fetchSearchPage(p, searchInsight.query || searchTerm.trim(), buildSearchFilters);
+      return;
+    }
+    applyFilters(p);
   };
 
   return (
@@ -237,11 +244,7 @@ const Products: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <aside className="md:col-span-1 space-y-4 md:sticky top-4 self-start">
           <div className="bg-white rounded-lg border shadow-sm p-3">
-            <CategoryTree
-              nodes={categoryTree}
-              selectedPath={selectedPath}
-              onSelect={(path) => { setSelectedPath(path); setPage(1); }}
-            />
+            <CategoryTree nodes={categoryTree} selectedPath={selectedPath} onSelect={(path) => { setSelectedPath(path); setPage(1); }} />
           </div>
 
           {showFilters && (
@@ -282,16 +285,19 @@ const Products: React.FC = () => {
                   <div className="text-sm text-gray-600 mb-1">Đánh giá tối thiểu</div>
                   <div className="flex flex-col gap-2">
                     {[
-                      { label: 'Từ 4.5★', value: 4.5 },
-                      { label: 'Từ 4★', value: 4 },
-                      { label: 'Từ 3★', value: 3 },
+                      { label: 'Từ 4.5', value: 4.5 },
+                      { label: 'Từ 4', value: 4 },
+                      { label: 'Từ 3', value: 3 },
                       { label: 'Bất kỳ', value: undefined },
                     ].map((opt) => (
                       <button
                         key={String(opt.value)}
                         onClick={() => setMinRating(opt.value as any)}
-                        className={`flex items-center justify-between px-3 py-2 rounded border text-sm ${
-                          (opt.value ?? '') === (minRating ?? '') ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-300 hover:bg-gray-50'
+                        className={`flex items-center justify-between px-3 py-2 rounded border text-sm ${(
+                          opt.value ?? ''
+                        ) === (minRating ?? '')
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                          : 'border-gray-300 hover:bg-gray-50'
                         }`}
                       >
                         <span className="flex items-center gap-2">
@@ -324,8 +330,11 @@ const Products: React.FC = () => {
                       <button
                         key={String(opt.value)}
                         onClick={() => setPositiveOver(opt.value as any)}
-                        className={`px-3 py-1.5 rounded-full text-xs border ${
-                          (opt.value ?? '') === (positiveOver ?? '') ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-300 hover:bg-gray-50'
+                        className={`px-3 py-1.5 rounded-full text-xs border ${(
+                          opt.value ?? ''
+                        ) === (positiveOver ?? '')
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                          : 'border-gray-300 hover:bg-gray-50'
                         }`}
                       >
                         {opt.label}
@@ -334,9 +343,47 @@ const Products: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex gap-2 pt-1">
-                  <button onClick={applyFilters} className="flex-1 px-3 py-2 bg-emerald-600 text-white rounded-md text-sm">Áp dụng</button>
                   <button
-                    onClick={() => { setBrand(''); setMinPrice(undefined); setMaxPrice(undefined); setMinRating(undefined); setIsVnOrigin(false); setIsVnBrand(false); setPositiveOver(undefined); setSort(undefined); applyFilters(); }}
+                    onClick={() => {
+                      const keyword = (searchInsight?.query || searchTerm).trim();
+                      if (searchInsight && keyword) {
+                        fetchSearchPage(1, keyword, buildSearchFilters);
+                      } else {
+                        applyFilters(1);
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 bg-emerald-600 text-white rounded-md text-sm"
+                  >
+                    Áp dụng
+                  </button>
+                  <button
+                    onClick={() => {
+                      setBrand('');
+                      setMinPrice(undefined);
+                      setMaxPrice(undefined);
+                      setMinRating(undefined);
+                      setIsVnOrigin(false);
+                      setIsVnBrand(false);
+                      setPositiveOver(undefined);
+                      setSort(undefined);
+                      const clearedFilters = {
+                        ...currentCategoryParams,
+                        brand: undefined,
+                        min_price: undefined,
+                        max_price: undefined,
+                        min_rating: undefined,
+                        sort: undefined,
+                        is_vietnam_origin: undefined,
+                        is_vietnam_brand: undefined,
+                        positive_over: undefined,
+                      };
+                      const keyword = (searchInsight?.query || searchTerm).trim();
+                      if (searchInsight && keyword) {
+                        fetchSearchPage(1, keyword, clearedFilters);
+                      } else {
+                        applyFilters(1, clearedFilters);
+                      }
+                    }}
                     className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md text-sm"
                   >
                     Xóa lọc
@@ -348,50 +395,6 @@ const Products: React.FC = () => {
         </aside>
 
         <section className="md:col-span-3">
-          {searchInsight && (
-            <div className="bg-white rounded-xl border border-emerald-100 shadow-sm p-4 mb-5 space-y-4">
-              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide">
-                <span
-                  className={`px-3 py-1 rounded-full border ${
-                    isChatResponse ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                  }`}
-                >
-                  {isChatResponse ? 'Intent: Chat' : 'Intent: Product search'}
-                </span>
-                <span className="px-3 py-1 rounded-full border border-gray-200 text-gray-600 normal-case">
-                  Query: “{searchInsight.query}”
-                </span>
-                {!isChatResponse && displayKeyword && (
-                  <span className="px-3 py-1 rounded-full border border-emerald-200 text-emerald-700 normal-case">
-                    Keyword: “{displayKeyword}”
-                  </span>
-                )}
-                <span className="px-3 py-1 rounded-full border border-gray-200 text-gray-600 normal-case">
-                  Count: {searchInsight.count}
-                </span>
-              </div>
-              {isChatResponse && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-md p-3">
-                  {searchInsight.aiMessage || 'Minh chi ho tro san pham thoi, ban thu nhap cu the hon nhe.'}
-                </div>
-              )}
-              {!isChatResponse && displayKeyword && (
-                <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 text-sm rounded-md p-3">
-                  Bot dang tim kiem voi tu khoa “{displayKeyword}”.
-                </div>
-              )}
-              <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Intent Debug Log</div>
-                <div className="mt-2 bg-gray-900 text-gray-100 text-xs font-mono rounded-lg p-3 space-y-1 overflow-x-auto">
-                  {searchIntentLogs.map((line, idx) => (
-                    <div key={`${line}-${idx}`} className="whitespace-pre-wrap leading-relaxed">
-                      {line}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm text-gray-600">Tổng: {totalProducts} sản phẩm</div>
             <div className="flex items-center gap-2">
@@ -399,13 +402,31 @@ const Products: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button
                   className={`px-3 py-1.5 rounded-full text-xs border ${!sort ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-300 hover:bg-gray-50'}`}
-                  onClick={() => { setSort(undefined); applyFilters(); }}
+                  onClick={() => {
+                    setSort(undefined);
+                    const keyword = (searchInsight?.query || searchTerm).trim();
+                    const filters = { ...buildSearchFilters, sort: undefined };
+                    if (searchInsight && keyword) {
+                      fetchSearchPage(1, keyword, filters);
+                    } else {
+                      applyFilters(1, { sort: undefined });
+                    }
+                  }}
                 >
                   Mặc định
                 </button>
                 <button
                   className={`px-3 py-1.5 rounded-full text-xs border ${sort === 'rating_desc' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-300 hover:bg-gray-50'}`}
-                  onClick={() => { setSort('rating_desc'); applyFilters(); }}
+                  onClick={() => {
+                    setSort('rating_desc');
+                    const keyword = (searchInsight?.query || searchTerm).trim();
+                    const filters = { ...buildSearchFilters, sort: 'rating_desc' as ProductFilterParams['sort'] };
+                    if (searchInsight && keyword) {
+                      fetchSearchPage(1, keyword, filters);
+                    } else {
+                      applyFilters(1, { sort: 'rating_desc' });
+                    }
+                  }}
                 >
                   Đánh giá
                 </button>
@@ -414,7 +435,13 @@ const Products: React.FC = () => {
                   onClick={() => {
                     const next = sort === 'price_asc' ? 'price_desc' : 'price_asc';
                     setSort(next as any);
-                    applyFilters();
+                    const keyword = (searchInsight?.query || searchTerm).trim();
+                    const filters = { ...buildSearchFilters, sort: next as ProductFilterParams['sort'] };
+                    if (searchInsight && keyword) {
+                      fetchSearchPage(1, keyword, filters);
+                    } else {
+                      applyFilters(1, { sort: next });
+                    }
                   }}
                   title="Sắp xếp theo giá"
                 >
@@ -430,13 +457,13 @@ const Products: React.FC = () => {
             <div className="py-10 text-center text-red-600">{error}</div>
           ) : (
             <>
-              <ProductList products={products} currentPage={page} pageSize={pageSize} onPageChange={(p) => setPage(p)} />
+              <ProductList products={products} currentPage={page} pageSize={pageSize} totalProducts={totalProducts} onPageChange={handlePageChange} />
               {products.length === 0 && (
                 <div className="text-center py-10">
                   <p className={`text-sm ${isChatResponse ? 'text-amber-700' : 'text-gray-500'}`}>
                     {isChatResponse
-                      ? searchInsight?.aiMessage || 'Minh chi ho tro san pham thoi, ban thu nhap cu the hon nhe.'
-                      : `Khong co san pham phu hop${displayKeyword ? ` cho "${displayKeyword}"` : ''}.`}
+                      ? searchInsight?.aiMessage || 'Mình chỉ hỗ trợ sản phẩm thôi, bạn thử nhập cụ thể hơn nhé.'
+                      : `Không có sản phẩm phù hợp${displayKeyword ? ` cho "${displayKeyword}"` : ''}.`}
                   </p>
                 </div>
               )}

@@ -10,6 +10,7 @@ import Profile from './pages/Profile';
 import Admin from './pages/Admin';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
+import AdminUsers from './pages/AdminUsers';
 export function App() {
   return (
     <BrowserRouter>
@@ -29,6 +30,8 @@ export function App() {
               </ProtectedRoute>
             } 
           />
+          <Route path="admin" element={<Admin />} />
+          <Route path="admin/users" element={<AdminUsers />} />
         </Route>
       </Routes>
     </BrowserRouter>

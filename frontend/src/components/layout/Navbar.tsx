@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { SearchIcon, ScanIcon, ShoppingBagIcon, UserIcon, MenuIcon, XIcon } from 'lucide-react';
 import { fetchUserProfile } from '../../api/user';
+import { ShieldCheckIcon } from 'lucide-react';
+
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
@@ -24,15 +26,22 @@ const Navbar = () => {
     // Account link is rendered specially below based on authentication state
   ];
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     const checkAuth = async () => {
       try {
-        await fetchUserProfile();
-        if (mounted) setIsAuthenticated(true);
+        const profile = await fetchUserProfile();
+        if (mounted) {
+          setIsAuthenticated(true);
+          setUserRole((profile as any).role || (profile as any).Role || null);
+        }
       } catch (err) {
-        if (mounted) setIsAuthenticated(false);
+        if (mounted) {
+          setIsAuthenticated(false);
+          setUserRole(null);
+        }
       }
     };
     checkAuth();
@@ -97,6 +106,18 @@ const Navbar = () => {
                 <span className="font-medium">Đăng nhập</span>
               </Link>
             )}
+            {isAuthenticated && (userRole || '').toLowerCase() === 'admin' && (
+              <Link
+                to="/admin"
+                className={`flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium ${
+                  location.pathname.startsWith('/admin')
+                    ? 'text-emerald-600 bg-emerald-50'
+                    : 'text-gray-600 hover:text-emerald-600 hover:bg-emerald-50'
+                }`}
+              > <ShieldCheckIcon className="w-5 h-5" />
+                <span>Quản lý hệ thống</span>
+              </Link>
+            )}
           </nav>
         </div>
         {/* Mobile menu */}
@@ -129,6 +150,21 @@ const Navbar = () => {
                 onClick={() => setIsMenuOpen(false)}
               >
                 <span className="font-medium">Đăng nhập</span>
+              </Link>
+            )}
+            {isAuthenticated && (userRole || '').toLowerCase() === 'admin' && (
+              <Link
+                to="/admin"
+                className={`flex items-center space-x-3 px-4 py-3 text-base font-medium ${
+                  location.pathname.startsWith('/admin')
+                    ? 'text-emerald-600 bg-emerald-50'
+                    : 'text-gray-600 hover:text-emerald-600 hover:bg-emerald-50'
+                }`}
+                
+                onClick={() => setIsMenuOpen(false)}
+                
+              >
+                <span>Quản lý hệ thống</span>
               </Link>
             )}
           </div>

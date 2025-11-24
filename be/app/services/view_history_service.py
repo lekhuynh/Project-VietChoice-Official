@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 from ..models.product_view import Product_Views
 
 
@@ -20,7 +20,7 @@ def add_view_history(db: Session, user, product_id: int):
     )
 
     if existing:
-        existing.Viewed_At = datetime.utcnow()
+        existing.Viewed_At = datetime.now(timezone.utc)
         db.commit()
         return existing
 

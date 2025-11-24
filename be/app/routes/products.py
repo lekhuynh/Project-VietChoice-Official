@@ -4,6 +4,7 @@ import os
 import tempfile
 from app.models.products import Products
 from app.models.categories import Categories
+import math
 from ..services.risk_service import evaluate_risk
 from ..database import get_db
 from ..services import crawler_tiki_service as tiki
@@ -14,12 +15,14 @@ from ..core.security import get_optional_user
 from ..services.search_history_service import save_search_history
 from ..services.view_history_service import add_view_history
 from ..services.chat_intent_service import parse_search_intent
+from ..services.product_service import search_products_service
+from typing import Optional, List, Dict
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
 
 # ============================================================
-##1️⃣ TÌM KIẾM SẢN PHẨM THEO TÊN (TEXT SEARCH)
+# 1a TÌM KIẾM SẢN PHẨM THEO TÊN (TEXT SEARCH)
 #============================================================
 @router.get("/search")
 async def search_product(
@@ -46,6 +49,21 @@ async def search_product(
     print(f"✅ [Searching] '{q}' -> Keyword: '{refined_query}'")
     
     results = tiki.crawl_by_text(db, refined_query)
+
+    # Sắp xếp theo AI score tương tự score_expr ở CRUD
+    def ai_score(p: dict) -> float:
+        try:
+            return (
+                float(p.get("Sentiment_Score") or 0) * 0.4
+                + float(p.get("Avg_Rating") or 0) * 0.3
+                + math.log((p.get("Review_Count") or 0) + 1) * 0.2
+                + float(p.get("Positive_Percent") or 0) * 0.1
+            )
+        except Exception:
+            return 0.0
+
+    if isinstance(results, list):
+        results = sorted(results, key=ai_score, reverse=True)
     
     if results:
         save_search_history(db, current_user, query=q, results=results)
@@ -57,6 +75,85 @@ async def search_product(
         "count": len(results),
         "results": results,
         "ai_message": None
+    }
+
+def _serialize_product(product: Products) -> dict:
+    return {
+        "Product_ID": product.Product_ID,
+        "Product_Name": product.Product_Name,
+        "Brand": product.Brand,
+        "Image_URL": product.Image_URL,
+        "Product_URL": product.Product_URL,
+        "Price": float(product.Price) if product.Price else None,
+        "Avg_Rating": product.Avg_Rating,
+        "Review_Count": product.Review_Count,
+        "Positive_Percent": product.Positive_Percent,
+        "Sentiment_Score": product.Sentiment_Score,
+        "Sentiment_Label": product.Sentiment_Label,
+        "Origin": product.Origin,
+        "Brand_country": product.Brand_country,
+        "Source": product.Source,
+    }
+
+# ============================================================
+# 1b TÌM KIẾM SẢN PHẨM TRONG CSDL (LOCAL SEARCH)
+# ============================================================
+@router.get("/search/local")
+def search_product_local(
+    q: str,
+    limit: int = Query(20, ge=1, le=50),
+    skip: int = Query(0, ge=0),
+    lv1: Optional[str] = None,
+    lv2: Optional[str] = None,
+    lv3: Optional[str] = None,
+    lv4: Optional[str] = None,
+    lv5: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    brand: Optional[str] = None,
+    min_rating: Optional[float] = None,
+    sort: Optional[str] = None,
+    is_vietnam_origin: Optional[bool] = False,
+    is_vietnam_brand: Optional[bool] = False,
+    positive_over: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_optional_user)
+):
+    keyword = (q or "").strip()
+    if not keyword:
+        raise HTTPException(status_code=400, detail="Thiếu từ khóa tìm kiếm")
+
+    # GỌI SERVICE — CHUẨN
+    items, total = search_products_service(
+        db=db,
+        keyword=keyword,
+        limit=limit,
+        skip=skip,
+        lv1=lv1, lv2=lv2, lv3=lv3, lv4=lv4, lv5=lv5,
+        min_price=min_price,
+        max_price=max_price,
+        brand=brand,
+        min_rating=min_rating,
+        sort=sort,
+        is_vietnam_origin=is_vietnam_origin,
+        is_vietnam_brand=is_vietnam_brand,
+        positive_over=positive_over,
+    )
+
+    results = [_serialize_product(p) for p in items]
+
+    if results:
+        save_search_history(db, current_user, query=q, results=results)
+
+    return {
+        "input_type": "local_product_search",
+        "query": q,
+        "refined_query": keyword,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "count": len(results),
+        "results": results
     }
 
 # ============================================================
@@ -168,23 +265,37 @@ def get_products_by_category(
     max_price: Optional[float] = None,
     brand: Optional[str] = None,
     min_rating: Optional[float] = None,
-    sort: Optional[str] = None,  # "price_asc" | "price_desc" | "rating_desc"
+    sort: Optional[str] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50),
     is_vietnam_origin: Optional[bool] = False,
     is_vietnam_brand: Optional[bool] = False,
     positive_over: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    products = filter_products_service(
+    items, total = filter_products_service(
         db=db,
         lv1=lv1, lv2=lv2, lv3=lv3, lv4=lv4, lv5=lv5,
         min_price=min_price, max_price=max_price,
         brand=brand, min_rating=min_rating,
         sort=sort,
+        skip=skip,
+        limit=limit,
         is_vietnam_origin=is_vietnam_origin,
         is_vietnam_brand=is_vietnam_brand,
         positive_over=positive_over,
     )
-    return products
+
+    results = [_serialize_product(p) for p in items]
+
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "count": len(results),
+        "results": results
+    }
+
 # ============================================================
 # 4️⃣ LẤY CHI TIẾT SẢN PHẨM TRONG DB
 # ============================================================

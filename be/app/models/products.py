@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Unicode, UnicodeText,
-    BigInteger, DECIMAL, Text, UniqueConstraint
+    BigInteger, DECIMAL, Text, UniqueConstraint, func
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -33,8 +33,17 @@ class Products(Base):
     Origin = Column(Unicode(255))
     Is_Authentic = Column(Boolean, default=True)
     Is_Active = Column(Boolean, default=True)
-    Created_At = Column(DateTime, default=datetime.utcnow)
-    Updated_At = Column(DateTime, default=datetime.utcnow)
+
+    Created_At = Column(
+        DateTime(timezone=False),
+        server_default=func.sysutcdatetime()
+    )
+
+    Updated_At = Column(
+        DateTime(timezone=False),
+        server_default=func.sysutcdatetime(),
+        onupdate=func.sysutcdatetime()
+    )
     Description = Column(UnicodeText)
 
     # Relationships

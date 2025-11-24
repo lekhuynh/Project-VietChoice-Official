@@ -136,11 +136,12 @@ def analyze_comment(text: str) -> float:
 
 
 def label_sentiment(score: float) -> str:
+    """Return normalized labels used across the app and analytics."""
     if score >= 0.6:
-        return "Tốt"
+        return "positive"
     if score >= 0.2:
-        return "Trung bình"
-    return "Kém"
+        return "neutral"
+    return "negative"
 
 
 def _collect_comments_for_product(db: Session, product: Products) -> List[str]:
@@ -223,12 +224,4 @@ def update_product_sentiment(db: Session, product_id: int) -> Optional[float]:
     return avg
 
 
-def analyze_bulk(comments: Iterable[str]) -> List[float]:
-    texts = [c for c in comments if c]
-    if not texts:
-        return []
-    scores = _score_with_model(texts)
-    if scores is not None:
-        return [float(s) for s in scores]
-    return [analyze_comment(c) for c in texts]
 

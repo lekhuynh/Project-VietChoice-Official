@@ -22,23 +22,32 @@ export interface ProductFilterParams {
   max_price?: number;
   brand?: string; // comma separated
   min_rating?: number;
-  sort?: 'price_asc' | 'price_desc' | 'rating_desc';
+  sort?: 'price_asc' | 'price_desc' | 'rating_desc' | 'review_desc' | 'positive_desc';
   is_vietnam_origin?: boolean;
   is_vietnam_brand?: boolean;
   positive_over?: number;
+  skip?: number;
+  limit?: number;
+}
+
+export interface ProductsByCategoryResponse {
+  results: DbProduct[];
+  total: number;
+  count: number;
+  skip: number;
+  limit: number;
 }
 
 export const fetchProductsByCategoryAndFilters = async (
   params: ProductFilterParams
-): Promise<DbProduct[]> => {
+): Promise<ProductsByCategoryResponse> => {
   const usp = new URLSearchParams();
   (Object.entries(params) as [keyof ProductFilterParams, any][]).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') usp.set(String(k), String(v));
   });
   const url = `${API_BASE_URL}/products/by-category${usp.toString() ? `?${usp.toString()}` : ''}`;
   const res = await fetch(url, { credentials: 'include' });
-  if (!res.ok) throw new Error('Không lấy được danh sách sản phẩm.');
-  const data = (await res.json()) as DbProduct[];
-  return Array.isArray(data) ? data : [];
+  if (!res.ok) throw new Error('Khong lay duoc danh sach san pham.');
+  const data = (await res.json()) as ProductsByCategoryResponse;
+  return data;
 };
-

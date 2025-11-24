@@ -39,8 +39,17 @@ const Profile: React.FC = () => {
 
   const formatDate = (dateString?: string | Date) => {
     if (!dateString) return '';
-    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-    return date.toLocaleDateString('vi-VN', {
+    const normalizeString = (s: string) => s.replace(' ', 'T');
+    const raw = typeof dateString === 'string' ? normalizeString(dateString.trim()) : dateString;
+    const hasTz = typeof raw === 'string' && /([zZ]|[+-]\d{2}:?\d{2})/.test(raw);
+    let date = typeof raw === 'string' ? new Date(hasTz ? raw : `${raw} GMT+0700`) : raw;
+    if (isNaN(date.getTime()) && typeof raw === 'string') {
+      // Fallback: treat as UTC then convert to VN
+      date = new Date(`${raw}Z`);
+    }
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',

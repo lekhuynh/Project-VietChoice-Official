@@ -29,8 +29,27 @@ import {
 const COLORS = ['#10b981', '#3b82f6', '#ef4444'];
 
 const Admin = () => {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [searchTerm, setSearchTerm] = useState('');
+
+  /** --------------------------------------
+   *  STATE
+   -------------------------------------- */
+  const [activeTab, setActiveTab] = useState("dashboard");
+
+  // const [products, setProducts] = useState<AdminProduct[]>([]);
+  // const [users, setUsers] = useState<AdminUser[]>([]);
+  // const [featuredProducts, setFeaturedProducts] = useState<AdminProduct[]>([]);
+  // const [sentimentData, setSentimentData] = useState<SentimentGroup[]>([]);
+
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // const [stats, setStats] = useState({
+  //   totalProducts: 0,
+  //   totalUsers: 0,
+  //   positiveRatio: 0,
+  // });
+
+  const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
@@ -945,6 +964,7 @@ const Admin = () => {
               </div>
             </div>
           )}
+
         </div>
       </div>
 

@@ -1,6 +1,5 @@
-from sqlalchemy import Column, Integer, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, DateTime, ForeignKey, func
 from sqlalchemy.orm import relationship
-from datetime import datetime
 
 from ..database import Base
 
@@ -11,7 +10,7 @@ class Favorites(Base):
     ID = Column(Integer, primary_key=True, index=True)
     User_ID = Column(Integer, ForeignKey("Users.User_ID"), nullable=False)
     Product_ID = Column(Integer, ForeignKey("Products.Product_ID"), nullable=False)
-    Created_At = Column(DateTime, default=datetime.utcnow)
+    Created_At = Column(DateTime, server_default=func.sysutcdatetime())
 
     # Relationships
     user = relationship("Users", back_populates="favorites")
