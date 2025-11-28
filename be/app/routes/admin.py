@@ -1,35 +1,10 @@
-# Tổng hợp các thao tác quản trị hệ thống cho admin.
 from __future__ import annotations
+
+from datetime import datetime
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from datetime import datetime
-
-from ..database import get_db
-from ..core.security import require_admin
-from ..services.auto_update_service import auto_update_sentiment
-from ..services import admin_service, user_service, product_service
-from ..crud import products as product_crud, users as user_crud
-from ..schemas.products import ProductCreate, ProductUpdate
-from ..schemas.users import UserCreate
-from ..models.products import Products
-from ..models.users import Users
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
-from typing import Optional
-from datetime import datetime
-
-from ..database import get_db
-from ..models.products import Products
-from app.core.security import require_admin
-from app.core.security import require_admin as get_current_admin
-
-from ..services.product_service import (
-    search_products_service,
-    filter_products_service,
-    get_outstanding_product_service,
-    get_sentiment_by_category,
-)
 
 from app.services.auto_update_service import auto_update_products
 from app.services.system_flag_service import (
@@ -37,42 +12,44 @@ from app.services.system_flag_service import (
     enable_auto_update,
     get_auto_update_status,
 )
-from app.services import user_service
+from ..core.security import require_admin
+from ..crud import products as product_crud, users as user_crud
+from ..database import get_db
+from ..models.products import Products
+from ..schemas.products import ProductCreate, ProductUpdate
+from ..schemas.users import UserCreate
+from ..services import admin_service, user_service
+from ..services.product_service import (
+    filter_products_service,
+    get_outstanding_product_service,
+    get_sentiment_by_category,
+    search_products_service,
+)
 
-# =====================================================================
-# ADMIN ROUTER
-# =====================================================================
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
-# ============================================================
-# DASHBOARD
-# ============================================================
+# ---------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------
 @router.get("/dashboard", dependencies=[Depends(require_admin)])
 def get_dashboard(db: Session = Depends(get_db)):
-    """Get dashboard statistics."""
     return admin_service.get_dashboard_stats(db)
 
 
-# ============================================================
-# PRODUCTS CRUD
-# ============================================================
+# ---------------------------------------------------------------------
+# Products CRUD
+# ---------------------------------------------------------------------
 @router.get("/products", dependencies=[Depends(require_admin)])
-def list_products(
-    search: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
-):
-    """List all products with optional search."""
+def list_products(search: Optional[str] = Query(None), db: Session = Depends(get_db)):
     products = product_crud.list_products(db, skip=0, limit=1000)
-    
     if search:
-        search_lower = search.lower()
+        q = search.lower()
         products = [
-            p for p in products
-            if (p.Product_Name and search_lower in p.Product_Name.lower())
-            or (p.Brand and search_lower in p.Brand.lower())
+            p
+            for p in products
+            if (p.Product_Name and q in p.Product_Name.lower()) or (p.Brand and q in p.Brand.lower())
         ]
-    
     return [
         {
             "Product_ID": p.Product_ID,
@@ -94,11 +71,7 @@ def list_products(
 
 
 @router.post("/products", dependencies=[Depends(require_admin)])
-def create_product(
-    product_data: ProductCreate,
-    db: Session = Depends(get_db)
-):
-    """Create a new product."""
+def create_product(product_data: ProductCreate, db: Session = Depends(get_db)):
     data = {
         "Product_Name": product_data.product_name,
         "Brand": product_data.brand,
@@ -108,97 +81,25 @@ def create_product(
         "Is_Active": product_data.is_active if product_data.is_active is not None else True,
     }
     product = product_crud.create_product(db, data)
-# =====================================================================
-# 1) AUTO UPDATE CONTROL
-# =====================================================================
-
-@router.post("/auto-update/enable", operation_id="admin_enable_auto_update")
-def admin_enable_auto_update(db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    ok = enable_auto_update(db)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Không bật được auto-update flag.")
-    return {"message": "Auto update ENABLED", "enabled": True}
-
-
-@router.post("/auto-update/disable", operation_id="admin_disable_auto_update")
-def admin_disable_auto_update(db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    ok = disable_auto_update(db)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Không tắt được auto-update flag.")
-    return {"message": "Auto update DISABLED", "enabled": False}
-
-
-@router.get("/auto-update/status", operation_id="admin_get_auto_update_status")
-def admin_auto_update_status(db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    return get_auto_update_status(db)
-
-
-@router.post("/auto-update/run-now", operation_id="admin_run_auto_update_now")
-def admin_run_auto_update_now(db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    stats = auto_update_products(
-        db,
-        older_than_hours=0,
-        limit=None,
-        workers=10,
-    )
-    return {"message": "Auto update executed manually.", "stats": stats}
-
-
-# =====================================================================
-# 2) USER MANAGEMENT (Admin)
-# =====================================================================
-
-@router.get("/users", operation_id="admin_list_users")
-def admin_list_all_users(db: Session = Depends(get_db), _: dict = Depends(require_admin)):
-    return user_service.get_all_users(db)
-
-
-@router.put("/users/{user_id}/role", operation_id="admin_update_user_role")
-def admin_update_user_role(
-    user_id: int,
-    role: str,
-    db: Session = Depends(get_db),
-    _: dict = Depends(require_admin),
-):
-    return user_service.change_user_role(db, user_id, role)
-
-
-@router.delete("/users/{user_id}", operation_id="admin_delete_user")
-def admin_delete_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-    _: dict = Depends(require_admin),
-):
-    return user_service.delete_user(db, user_id)
-
-
-# =====================================================================
-# 3) PRODUCT SEARCH (Admin)
-# =====================================================================
-
-def _serialize_product(product: Products) -> dict:
     return {
         "Product_ID": product.Product_ID,
         "Product_Name": product.Product_Name,
         "Brand": product.Brand,
         "Category_ID": product.Category_ID,
         "Price": float(product.Price) if product.Price else None,
+        "Description": product.Description,
         "Is_Active": product.Is_Active,
         "Created_At": product.Created_At.isoformat() if product.Created_At else None,
+        "Updated_At": product.Updated_At.isoformat() if product.Updated_At else None,
     }
 
 
 @router.put("/products/{product_id}", dependencies=[Depends(require_admin)])
-def update_product(
-    product_id: int,
-    product_data: ProductUpdate,
-    db: Session = Depends(get_db)
-):
-    """Update a product."""
+def update_product(product_id: int, product_data: ProductUpdate, db: Session = Depends(get_db)):
     product = product_crud.get_by_id(db, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    
+
     update_dict = {}
     if product_data.product_name is not None:
         update_dict["Product_Name"] = product_data.product_name
@@ -212,7 +113,7 @@ def update_product(
         update_dict["Description"] = product_data.description
     if product_data.is_active is not None:
         update_dict["Is_Active"] = product_data.is_active
-    
+
     updated = product_crud.update_product(db, product, update_dict)
     return {
         "Product_ID": updated.Product_ID,
@@ -226,39 +127,29 @@ def update_product(
 
 
 @router.delete("/products/{product_id}", dependencies=[Depends(require_admin)])
-def delete_product(
-    product_id: int,
-    db: Session = Depends(get_db)
-):
-    """Delete a product."""
+def delete_product(product_id: int, db: Session = Depends(get_db)):
     product = product_crud.get_by_id(db, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    
     product_crud.delete_product(db, product)
     return {"message": f"Product {product_id} deleted successfully"}
 
 
-# ============================================================
-# USERS CRUD
-# ============================================================
+# ---------------------------------------------------------------------
+# Users (deduplicated)
+# ---------------------------------------------------------------------
 @router.get("/users", dependencies=[Depends(require_admin)])
-def list_users(
-    search: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
-):
-    """List all users with optional search."""
+def list_users(search: Optional[str] = Query(None), db: Session = Depends(get_db)):
     users = user_service.get_all_users(db, skip=0, limit=1000)
-    
     if search:
-        search_lower = search.lower()
+        q = search.lower()
         users = [
-            u for u in users
-            if (u.User_Name and search_lower in u.User_Name.lower())
-            or (u.User_Email and search_lower in u.User_Email.lower())
-            or (u.Role and search_lower in u.Role.lower())
+            u
+            for u in users
+            if (u.User_Name and q in u.User_Name.lower())
+            or (u.User_Email and q in u.User_Email.lower())
+            or (u.Role and q in u.Role.lower())
         ]
-    
     return [
         {
             "User_ID": u.User_ID,
@@ -266,24 +157,19 @@ def list_users(
             "User_Email": u.User_Email,
             "Role": u.Role,
             "Created_At": u.Created_At.isoformat() if u.Created_At else None,
-            "lastActive": None,  # TODO: Implement last active tracking
         }
         for u in users
     ]
 
 
 @router.post("/users", dependencies=[Depends(require_admin)])
-def create_user(
-    user_data: UserCreate,
-    db: Session = Depends(get_db)
-):
-    """Create a new user."""
+def create_user(user_data: UserCreate, db: Session = Depends(get_db)):
     user = user_crud.create_user(
         db,
         email=user_data.email,
         name=user_data.name,
         password_plain=user_data.password,
-        role=user_data.role if hasattr(user_data, 'role') else "user"
+        role=user_data.role if hasattr(user_data, "role") else "user",
     )
     return {
         "User_ID": user.User_ID,
@@ -295,12 +181,7 @@ def create_user(
 
 
 @router.put("/users/{user_id}", dependencies=[Depends(require_admin)])
-def update_user(
-    user_id: int,
-    user_data: dict,
-    db: Session = Depends(get_db)
-):
-    """Update a user."""
+def update_user(user_id: int, user_data: dict, db: Session = Depends(get_db)):
     updated = user_service.admin_update_user(
         db,
         user_id,
@@ -308,7 +189,7 @@ def update_user(
             "name": user_data.get("User_Name"),
             "email": user_data.get("User_Email"),
             "role": user_data.get("Role"),
-        }
+        },
     )
     return {
         "User_ID": updated.User_ID,
@@ -318,72 +199,67 @@ def update_user(
     }
 
 
+@router.put("/users/{user_id}/role", dependencies=[Depends(require_admin)])
+def update_user_role(user_id: int, role: str, db: Session = Depends(get_db)):
+    return user_service.change_user_role(db, user_id, role)
+
+
 @router.delete("/users/{user_id}", dependencies=[Depends(require_admin)])
-def delete_user(
-    user_id: int,
-    db: Session = Depends(get_db)
-):
-    """Delete a user."""
+def delete_user(user_id: int, db: Session = Depends(get_db)):
     return user_service.delete_user(db, user_id)
 
 
-# ============================================================
-# ACTIVITY LOGS
-# ============================================================
-@router.get("/logs", dependencies=[Depends(require_admin)])
-def get_logs(db: Session = Depends(get_db)):
-    """Get activity logs (simplified - can be enhanced with actual logging system)."""
-    # For now, return empty array or basic activity
-    # TODO: Implement proper activity logging
-    return []
+# ---------------------------------------------------------------------
+# Auto update flags
+# ---------------------------------------------------------------------
+@router.post("/auto-update/enable", dependencies=[Depends(require_admin)])
+def admin_enable_auto_update(db: Session = Depends(get_db)):
+    ok = enable_auto_update(db)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Không bật được auto-update flag.")
+    return {"message": "Auto update ENABLED", "enabled": True}
 
 
-# ============================================================
-# CHARTS & ANALYTICS
-# ============================================================
-@router.get("/charts/sentiment", dependencies=[Depends(require_admin)])
-def get_sentiment_chart(db: Session = Depends(get_db)):
-    """Get sentiment chart data by category."""
-    return admin_service.get_sentiment_chart_data(db)
+@router.post("/auto-update/disable", dependencies=[Depends(require_admin)])
+def admin_disable_auto_update(db: Session = Depends(get_db)):
+    ok = disable_auto_update(db)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Không tắt được auto-update flag.")
+    return {"message": "Auto update DISABLED", "enabled": False}
 
 
-@router.get("/charts/trends", dependencies=[Depends(require_admin)])
-def get_trend_chart(db: Session = Depends(get_db)):
-    """Get trend chart data."""
-    return admin_service.get_trend_data(db)
+@router.get("/auto-update/status", dependencies=[Depends(require_admin)])
+def admin_auto_update_status(db: Session = Depends(get_db)):
+    return get_auto_update_status(db)
 
 
-@router.get("/featured-products", dependencies=[Depends(require_admin)])
-def get_featured_products(db: Session = Depends(get_db)):
-    """Get featured products."""
-    return admin_service.get_featured_products(db)
+@router.post("/auto-update/run-now", dependencies=[Depends(require_admin)])
+def admin_run_auto_update_now(db: Session = Depends(get_db)):
+    stats = auto_update_products(
+        db,
+        older_than_hours=0,
+        limit=None,
+        workers=10,
+    )
+    return {"message": "Auto update executed manually.", "stats": stats}
 
 
-# ============================================================
-# AUTO UPDATE
-# ============================================================
-@router.post("/auto-update-sentiment", dependencies=[Depends(require_admin)])
-def run_auto_update(db: Session = Depends(get_db)):
-    """
-    ⚙️ Admin endpoint: Cập nhật lại sentiment cho sản phẩm cũ hơn 24h.
-    """
-    result = auto_update_sentiment(db)
-    return result
-    #     "Image_URL": product.Image_URL,
-    #     "Product_URL": product.Product_URL,
-    #     "Price": float(product.Price) if product.Price else None,
-    #     "Avg_Rating": product.Avg_Rating,
-    #     "Review_Count": product.Review_Count,
-    #     "Positive_Percent": product.Positive_Percent,
-    #     "Sentiment_Score": product.Sentiment_Score,
-    #     "Sentiment_Label": product.Sentiment_Label,
-    #     "Origin": product.Origin,
-    #     "Brand_country": product.Brand_country,
-    #     "Source": product.Source,
-    # }
+# ---------------------------------------------------------------------
+# Product search/filter (admin)
+# ---------------------------------------------------------------------
+def _serialize_product(product: Products) -> dict:
+    return {
+        "Product_ID": product.Product_ID,
+        "Product_Name": product.Product_Name,
+        "Brand": product.Brand,
+        "Category_ID": product.Category_ID,
+        "Price": float(product.Price) if product.Price else None,
+        "Is_Active": product.Is_Active,
+        "Created_At": product.Created_At.isoformat() if product.Created_At else None,
+    }
 
 
-@router.get("/products/search", operation_id="admin_search_products")
+@router.get("/products/search", dependencies=[Depends(require_admin)], operation_id="admin_search_products")
 def admin_search_products(
     q: str,
     limit: int = Query(20, ge=1, le=50),
@@ -394,7 +270,6 @@ def admin_search_products(
     min_rating: Optional[float] = None,
     sort: Optional[str] = None,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_admin),
 ):
     items, total = search_products_service(
         db=db,
@@ -411,11 +286,7 @@ def admin_search_products(
     return {"total": total, "count": len(results), "results": results}
 
 
-# =====================================================================
-# 4) FILTER PRODUCTS BY CATEGORY (Admin)
-# =====================================================================
-
-@router.get("/products/by-category", operation_id="admin_filter_products_by_category")
+@router.get("/products/by-category", dependencies=[Depends(require_admin)], operation_id="admin_filter_products_by_category")
 def admin_filter_products_by_category(
     lv1: Optional[str] = None,
     lv2: Optional[str] = None,
@@ -433,11 +304,14 @@ def admin_filter_products_by_category(
     is_vietnam_brand: bool = False,
     positive_over: Optional[int] = None,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_admin),
 ):
     items, total = filter_products_service(
         db=db,
-        lv1=lv1, lv2=lv2, lv3=lv3, lv4=lv4, lv5=lv5,
+        lv1=lv1,
+        lv2=lv2,
+        lv3=lv3,
+        lv4=lv4,
+        lv5=lv5,
         min_price=min_price,
         max_price=max_price,
         brand=brand,
@@ -459,16 +333,14 @@ def admin_filter_products_by_category(
     }
 
 
-@router.get("/products/outstanding", dependencies=[Depends(require_admin)],operation_id="admin_outstanding_products")
+@router.get("/products/outstanding", dependencies=[Depends(require_admin)], operation_id="admin_outstanding_products")
 def admin_outstanding_products(
     limit: int = Query(10, ge=1, le=50),
     brand: Optional[str] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_admin)
 ):
-
     items = get_outstanding_product_service(
         db=db,
         limit=limit,
@@ -480,11 +352,10 @@ def admin_outstanding_products(
     return {"total": len(results), "results": results}
 
 
-# =====================================================================
-# 5) SENTIMENT ANALYTICS
-# =====================================================================
-
-@router.get("/analytics/sentiment-by-category", dependencies=[Depends(require_admin)],operation_id="admin_analytics_sentiment_by_category")
+# ---------------------------------------------------------------------
+# Analytics & featured
+# ---------------------------------------------------------------------
+@router.get("/analytics/sentiment-by-category", dependencies=[Depends(require_admin)], operation_id="admin_analytics_sentiment_by_category")
 def analytics_sentiment_by_category(
     group_by: str = Query("category", regex="^(category|lv1|lv2|lv3|lv4|lv5)$"),
     lv1: Optional[str] = None,
@@ -513,9 +384,36 @@ def analytics_sentiment_by_category(
 
     return get_sentiment_by_category(
         db=db,
-        lv1=lv1, lv2=lv2, lv3=lv3, lv4=lv4, lv5=lv5,
+        lv1=lv1,
+        lv2=lv2,
+        lv3=lv3,
+        lv4=lv4,
+        lv5=lv5,
         from_date=from_dt,
         to_date=to_dt,
         group_by=group_by,
         min_count=min_count,
     )
+
+
+@router.get("/charts/sentiment", dependencies=[Depends(require_admin)])
+def get_sentiment_chart(db: Session = Depends(get_db)):
+    return admin_service.get_sentiment_chart_data(db)
+
+
+@router.get("/charts/trends", dependencies=[Depends(require_admin)])
+def get_trend_chart(db: Session = Depends(get_db)):
+    return admin_service.get_trend_data(db)
+
+
+@router.get("/featured-products", dependencies=[Depends(require_admin)])
+def get_featured_products(db: Session = Depends(get_db)):
+    return admin_service.get_featured_products(db)
+
+
+# ---------------------------------------------------------------------
+# Activity logs placeholder
+# ---------------------------------------------------------------------
+@router.get("/logs", dependencies=[Depends(require_admin)])
+def get_logs(db: Session = Depends(get_db)):
+    return []

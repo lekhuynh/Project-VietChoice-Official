@@ -7,18 +7,25 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_user
 from app.database import get_db
 from app.crud import user_reviews as review_crud
+from app.models.users import Users
 
 router = APIRouter(prefix="/reviews", tags=["Reviews"])
+
 VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 def _to_vn(dt):
+    """
+    Convert datetime to Vietnam timezone.
+    - If naive: treat as already Vietnam local and attach tzinfo.
+    - If aware: convert to Vietnam timezone.
+    """
     if not dt:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=VN_TZ)
     else:
-        dt = dt.astimezone(timezone.utc)
-    return dt.astimezone(VN_TZ)
+        dt = dt.astimezone(VN_TZ)
+    return dt.isoformat()
 
 # ============================
 # 1️⃣ CREATE REVIEW
@@ -45,10 +52,11 @@ def create_review(data: dict, db: Session = Depends(get_db), current_user=Depend
     return {
         "review_id": review.Review_ID,
         "user_id": review.User_ID,
+        "user_name": review.user.User_Name,       
         "product_id": review.Product_ID,
         "rating": review.Rating,
         "comment": review.Comment,
-        "created_at": _to_vn(review.Created_At).isoformat() if review.Created_At else None,
+        "created_at": _to_vn(review.Created_At),
         "message": "Đánh giá đã được tạo"
     }
 
@@ -62,10 +70,11 @@ def get_reviews_by_product(product_id: int, db: Session = Depends(get_db)):
         {
             "review_id": r.Review_ID,
             "user_id": r.User_ID,
+            "user_name": r.user.User_Name,
             "product_id": r.Product_ID,
             "rating": r.Rating,
             "comment": r.Comment,
-            "created_at": _to_vn(r.Created_At).isoformat() if r.Created_At else None
+            "created_at": _to_vn(r.Created_At)
         }
         for r in reviews
     ]
@@ -80,10 +89,11 @@ def get_reviews_by_user(db: Session = Depends(get_db), current_user=Depends(get_
         {
             "review_id": r.Review_ID,
             "user_id": r.User_ID,
+            "user_name": r.user.User_Name,
             "product_id": r.Product_ID,
             "rating": r.Rating,
             "comment": r.Comment,
-            "created_at": _to_vn(r.Created_At).isoformat() if r.Created_At else None
+            "created_at": _to_vn(r.Created_At)
         }
         for r in reviews
     ]
@@ -109,10 +119,11 @@ def update_review(review_id: int, data: dict, db: Session = Depends(get_db), cur
     return {
         "review_id": updated.Review_ID,
         "user_id": updated.User_ID,
+        "user_name": updated.user.User_Name,
         "product_id": updated.Product_ID,
         "rating": updated.Rating,
         "comment": updated.Comment,
-        "created_at": _to_vn(updated.Created_At).isoformat() if updated.Created_At else None,
+        "created_at": _to_vn(updated.Created_At),
         "message": "Đã cập nhật đánh giá"
     }
 

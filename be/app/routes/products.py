@@ -329,8 +329,6 @@ def get_product_detail(product_id: int, db: Session = Depends(get_db), current_u
         "Source": product.Source,
         "Image_Full_URL": product.Image_Full_URL,
     }
-    if not product.Is_Active:
-        data["warning"] = "Sản phẩm này hiện không còn hoạt động trên nền tảng gốc."
     return data
 
 # ============================================================

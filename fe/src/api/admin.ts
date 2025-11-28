@@ -1,0 +1,384 @@
+import { API_BASE_URL } from '../config';
+
+// Dashboard Statistics
+export interface DashboardStats {
+  totalProducts: number;
+  totalUsers: number;
+  totalBrands: number;
+  positiveRatio: number;
+  todayProducts: number;
+  activeUsers: number;
+  pendingReviews: number;
+}
+
+// Product interfaces
+export interface AdminProduct {
+  Product_ID: number;
+  Product_Name: string;
+  Brand?: string;
+  Category_ID: number;
+  Price?: number;
+  Avg_Rating?: number;
+  Review_Count?: number;
+  Positive_Percent?: number;
+  Sentiment_Label?: string;
+  Is_Active: boolean;
+  Created_At?: string;
+  Updated_At?: string;
+  Description?: string;
+}
+
+export interface ProductCreate {
+  Product_Name: string;
+  Brand?: string;
+  Category_ID: number;
+  Price?: number;
+  Description?: string;
+  Is_Active?: boolean;
+}
+
+export interface ProductUpdate extends Partial<ProductCreate> {
+  Product_ID: number;
+}
+
+// User interfaces
+export interface AdminUser {
+  User_ID: number;
+  User_Name: string;
+  User_Email: string;
+  Role: string;
+  Created_At?: string;
+  lastActive?: string;
+}
+
+export interface UserCreate {
+  User_Name: string;
+  User_Email: string;
+  User_Password: string;
+  Role?: string;
+}
+
+export interface UserUpdate {
+  User_ID: number;
+  User_Name?: string;
+  User_Email?: string;
+  Role?: string;
+}
+
+// Chart data
+export interface SentimentChartData {
+  name: string;
+  positive: number;
+  neutral: number;
+  negative: number;
+}
+
+export interface TrendData {
+  month: string;
+  [key: string]: string | number;
+}
+
+// Featured products
+export interface FeaturedProduct {
+  Product_ID: number;
+  Product_Name: string;
+  Brand?: string;
+  Avg_Rating?: number;
+  Positive_Percent?: number;
+  views?: number;
+}
+
+// Activity log
+export interface ActivityLog {
+  id: number;
+  user: string;
+  action: string;
+  details: string;
+  timestamp: string;
+  type: 'create' | 'update' | 'delete';
+}
+
+// API functions
+const getAuthHeaders = () => ({
+  'Content-Type': 'application/json',
+});
+
+// Dashboard
+export const getDashboardStats = async (): Promise<DashboardStats> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/dashboard`, {
+      credentials: 'include',
+      headers: getAuthHeaders(),
+    });
+    
+    if (!response.ok) {
+      let errorMessage = 'Lỗi khi tải thống kê dashboard';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.detail || errorData.message || errorMessage;
+      } catch {
+        // If response is not JSON, use status text
+        errorMessage = response.statusText || errorMessage;
+      }
+      
+      if (response.status === 401) {
+        throw new Error('Unauthenticated: ' + errorMessage);
+      }
+      if (response.status === 403) {
+        throw new Error('Forbidden: Admin access required - ' + errorMessage);
+      }
+      throw new Error(`HTTP ${response.status}: ${errorMessage}`);
+    }
+    
+    const data = await response.json();
+    console.log('Dashboard stats response:', data);
+    return data;
+  } catch (error: any) {
+    console.error('getDashboardStats error:', error);
+    if (error.message) {
+      throw error;
+    }
+    throw new Error('Lỗi kết nối khi tải thống kê dashboard: ' + (error?.message || 'Unknown error'));
+  }
+};
+
+// Products
+export const getAdminProducts = async (search?: string): Promise<AdminProduct[]> => {
+  const url = new URL(`${API_BASE_URL}/admin/products`);
+  if (search) {
+    url.searchParams.append('search', search);
+  }
+  const response = await fetch(url.toString(), {
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Lỗi khi tải danh sách sản phẩm');
+  }
+  return response.json();
+};
+
+export const createProduct = async (product: ProductCreate): Promise<AdminProduct> => {
+  const response = await fetch(`${API_BASE_URL}/admin/products`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(product),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    const error = await response.json().catch(() => ({ detail: 'Lỗi khi tạo sản phẩm' }));
+    throw new Error(error.detail || 'Lỗi khi tạo sản phẩm');
+  }
+  return response.json();
+};
+
+export const updateProduct = async (product: ProductUpdate): Promise<AdminProduct> => {
+  const response = await fetch(`${API_BASE_URL}/admin/products/${product.Product_ID}`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(product),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    const error = await response.json().catch(() => ({ detail: 'Lỗi khi cập nhật sản phẩm' }));
+    throw new Error(error.detail || 'Lỗi khi cập nhật sản phẩm');
+  }
+  return response.json();
+};
+
+export const deleteProduct = async (productId: number): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/admin/products/${productId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Lỗi khi xóa sản phẩm');
+  }
+};
+
+// Users
+export const getAdminUsers = async (search?: string): Promise<AdminUser[]> => {
+  const url = new URL(`${API_BASE_URL}/admin/users`);
+  if (search) {
+    url.searchParams.append('search', search);
+  }
+  const response = await fetch(url.toString(), {
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Lỗi khi tải danh sách người dùng');
+  }
+  return response.json();
+};
+
+export const createUser = async (user: UserCreate): Promise<AdminUser> => {
+  const response = await fetch(`${API_BASE_URL}/admin/users`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(user),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    const error = await response.json().catch(() => ({ detail: 'Lỗi khi tạo người dùng' }));
+    throw new Error(error.detail || 'Lỗi khi tạo người dùng');
+  }
+  return response.json();
+};
+
+export const updateUser = async (user: UserUpdate): Promise<AdminUser> => {
+  const response = await fetch(`${API_BASE_URL}/admin/users/${user.User_ID}`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(user),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    const error = await response.json().catch(() => ({ detail: 'Lỗi khi cập nhật người dùng' }));
+    throw new Error(error.detail || 'Lỗi khi cập nhật người dùng');
+  }
+  return response.json();
+};
+
+export const deleteUser = async (userId: number): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Lỗi khi xóa người dùng');
+  }
+};
+
+// Activity logs
+export const getActivityLogs = async (): Promise<ActivityLog[]> => {
+  const response = await fetch(`${API_BASE_URL}/admin/logs`, {
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Lỗi khi tải nhật ký hoạt động');
+  }
+  return response.json();
+};
+
+// Update sentiment
+// Update sentiment / trigger manual auto-update
+export const updateSentiment = async (): Promise<{ message: string; stats?: unknown }> => {
+  const response = await fetch(`${API_BASE_URL}/admin/auto-update/run-now`, {
+    method: "POST",
+    credentials: "include",
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error("Unauthenticated");
+    if (response.status === 403) throw new Error("Forbidden: Admin access required");
+    throw new Error("Loi khi chay lam moi du lieu");
+  }
+  return response.json();
+};
+
+// Chart data
+export const getSentimentChartData = async (): Promise<SentimentChartData[]> => {
+  const response = await fetch(`${API_BASE_URL}/admin/charts/sentiment`, {
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Lỗi khi tải dữ liệu biểu đồ');
+  }
+  return response.json();
+};
+
+export const getTrendData = async (): Promise<TrendData[]> => {
+  const response = await fetch(`${API_BASE_URL}/admin/charts/trends`, {
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Lỗi khi tải dữ liệu xu hướng');
+  }
+  return response.json();
+};
+
+export const getFeaturedProducts = async (): Promise<FeaturedProduct[]> => {
+  const response = await fetch(`${API_BASE_URL}/admin/featured-products`, {
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Lỗi khi tải sản phẩm nổi bật');
+  }
+  return response.json();
+};
+
+
+
+// Auto-update flags
+export const getAutoUpdateStatus = async (): Promise<{ enabled: boolean }> => {
+  const response = await fetch(`${API_BASE_URL}/admin/auto-update/status`, {
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Loi khi lay trang thai auto-update');
+  }
+  return response.json();
+};
+
+export const enableAutoUpdateAdmin = async (): Promise<{ message: string; enabled: boolean }> => {
+  const response = await fetch(`${API_BASE_URL}/admin/auto-update/enable`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Loi khi bat auto-update');
+  }
+  return response.json();
+};
+
+export const disableAutoUpdateAdmin = async (): Promise<{ message: string; enabled: boolean }> => {
+  const response = await fetch(`${API_BASE_URL}/admin/auto-update/disable`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Unauthenticated');
+    if (response.status === 403) throw new Error('Forbidden: Admin access required');
+    throw new Error('Loi khi tat auto-update');
+  }
+  return response.json();
+};
+

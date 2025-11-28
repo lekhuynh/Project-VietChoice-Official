@@ -56,27 +56,75 @@ async def get_shared_session() -> aiohttp.ClientSession:
 # Async HTTP helper methods
 # =========================
 
-async def aget_product_detail(product_id: int, referer: Optional[str] = None, retry: int = 1, session: Optional[aiohttp.ClientSession] = None) -> Optional[Dict[str, Any]]:
+async def aget_product_detail(
+    product_id: int,
+    referer: Optional[str] = None,
+    retry: int = 1,
+    session: Optional[aiohttp.ClientSession] = None
+):
     url = TIKI_DETAIL_API.format(product_id=int(product_id))
     own = False
+
     if session is None:
         own = True
         timeout = aiohttp.ClientTimeout(total=15)
         session = aiohttp.ClientSession(timeout=timeout)
+
     try:
         for attempt in range(retry + 1):
             try:
                 async with session.get(url, headers=_headers(referer=referer)) as resp:
+
+                    # --- CASE 404: PRODUCT DEAD ---
+                    if resp.status == 404:
+                        return "NOT_FOUND"
+
+                    # --- CASE 200: phải check JSON ---
                     if resp.status == 200:
-                        return await resp.json(content_type=None)
+                        try:
+                            data = await resp.json(content_type=None)
+                        except Exception:
+                            await asyncio.sleep(0.4 * (attempt + 1))
+                            continue
+
+                        # ============ CHECK DELETED PRODUCT ============
+
+                        # API trả rỗng {}
+                        if not data:
+                            return "NOT_FOUND"
+
+                        # Tiki hay trả kiểu error
+                        if data.get("error") == "Product not found":
+                            return "NOT_FOUND"
+
+                        # Một số API trả flag xoá
+                        if data.get("is_deleted") is True:
+                            return "NOT_FOUND"
+
+                        # Nhiều sản phẩm sẽ trả: { "product": null }
+                        if "product" in data and data.get("product") is None:
+                            return "NOT_FOUND"
+
+                        # OK → return JSON hợp lệ
+                        return data
+
+                    # --- CASE 5xx: retry ---
+                    if 500 <= resp.status < 600:
+                        await asyncio.sleep(0.4 * (attempt + 1))
+                        continue
+
+                    # --- CASE lỗi khác: 401 / 403 / 429 ---
+                    return "API_ERROR"
+
             except Exception:
                 await asyncio.sleep(0.4 * (attempt + 1))
                 continue
-        return None
+
+        return "API_ERROR"
+
     finally:
         if own:
             await session.close()
-
 
 async def _aget_review_page(session: aiohttp.ClientSession, product_id: int, page: int, limit: int) -> List[str]:
     params = {
@@ -273,7 +321,7 @@ async def aget_tiki_ids(keyword: str, page: int = 1, limit: int = 10) -> List[in
 def get_product_detail(
     product_id: int,
     referer: Optional[str] = None,
-    retry: int = 1
+    retry: int = 3
 ) -> Optional[Dict[str, Any]]:
     """Fetch product detail from Tiki API (async under the hood)."""
     try:

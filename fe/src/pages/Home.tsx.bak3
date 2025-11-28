@@ -1,0 +1,121 @@
+import React, { useEffect, useState } from 'react';
+import ChatInterface from '../components/chat/ChatInterface';
+
+const slides = [
+  'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1524578271613-d550eacf6090?auto=format&fit=crop&w=1600&q=80',
+];
+
+const Home = () => {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setIndex((i) => (i + 1) % slides.length), 3000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      {/* Hero */}
+      <section className="max-w-6xl mx-auto px-4 md:px-6 pt-10 pb-8">
+        <div className="grid md:grid-cols-2 gap-10 items-center">
+          <div className="space-y-5">
+            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+              AI Assistant
+            </span>
+            <h1 className="text-3xl md:text-5xl font-bold tracking-tight leading-tight">
+              Mua sắm thông minh với dữ liệu minh bạch.
+            </h1>
+            <p className="text-lg leading-relaxed text-slate-600">
+              Trò chuyện với VietChoice để tra cứu nguồn gốc, giá cả, đánh giá sản phẩm và độ tin cậy. Bạn chỉ cần gõ từ khóa, phần kiểm tra minh bạch đã có chúng tôi lo.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <a href="/products" className="px-5 py-2.5 rounded-full bg-emerald-600 text-white text-sm font-semibold shadow hover:bg-emerald-700 transition">
+                Bắt đầu tìm kiếm
+              </a>
+              <a
+                href="/scanner"
+                className="px-5 py-2.5 rounded-full border border-slate-200 text-sm font-semibold text-slate-900 bg-white hover:border-emerald-500 transition"
+              >
+                Quét mã vạch
+              </a>
+            </div>
+          </div>
+
+          <div className="relative rounded-3xl overflow-hidden border border-white/60 bg-white/70 backdrop-blur-xl shadow-[0_24px_60px_-30px_rgba(15,23,42,0.35)]">
+            <div className="relative h-[260px] md:h-[320px]">
+              {slides.map((src, i) => (
+                <div
+                  key={src}
+                  className={`absolute inset-0 transition-all duration-700 ease-in-out ${
+                    i === index ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-6'
+                  }`}
+                  style={{ backgroundImage: `url(${src})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                />
+              ))}
+              <div className="absolute inset-0 bg-gradient-to-tr from-slate-900/10 via-white/20 to-emerald-100/20" />
+              <div className="absolute bottom-3 right-3 flex gap-1.5 z-10">
+                {slides.map((_, i) => (
+                  <span key={i} className={`w-2 h-2 rounded-full transition-all duration-300 ${i === index ? 'bg-white' : 'bg-white/50'}`} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* AI Assistant spotlight */}
+      <section className="px-4 md:px-6 py-16 bg-gradient-to-b from-slate-50 via-white to-slate-50">
+        <div className="max-w-5xl mx-auto text-center space-y-4 mb-10">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm">
+            <span className="text-lg">🤖</span> AI Powered
+          </div>
+          <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Trợ lý VietChoice</h2>
+          <p className="text-lg text-slate-600">AI Assistant – Kiểm tra sản phẩm, đánh giá & cảnh báo rủi ro.</p>
+        </div>
+
+        <div className="max-w-5xl mx-auto rounded-3xl bg-white/80 backdrop-blur-xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.06)] p-4 md:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-emerald-500 to-slate-900 text-white flex items-center justify-center text-lg font-semibold shadow-lg">
+                VC
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Trợ lý VietChoice</p>
+                <p className="text-xs text-slate-500">Nguồn dữ liệu chính của bạn</p>
+              </div>
+            </div>
+            <span className="px-3 py-1 rounded-full text-xs font-semibold border border-emerald-200 text-emerald-700 shadow-sm">
+              AI Beta
+            </span>
+          </div>
+
+          <div className="rounded-2xl bg-slate-50 border border-slate-100 shadow-inner h-[540px]">
+            <ChatInterface />
+          </div>
+
+          <div className="flex flex-wrap gap-2 mt-4">
+            {[
+              'Kiểm tra độ uy tín shop',
+              'Phân tích đánh giá sản phẩm',
+              'Xem cảnh báo rủi ro',
+              'Hướng dẫn quét mã vạch',
+            ].map((chip) => (
+              <span
+                key={chip}
+                className="px-3 py-2 rounded-full bg-white border border-slate-200 text-sm text-slate-700 shadow-sm hover:border-emerald-300 transition"
+              >
+                {chip}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default Home;
+

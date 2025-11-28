@@ -1,0 +1,537 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowLeft,
+  Star,
+  ShieldAlert,
+  Info,
+  ShoppingCart,
+  Edit,
+  Trash,
+  Heart,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
+import RatingBar from '../components/products/RatingBar';
+import {
+  fetchProductDetail,
+  fetchProductRisk,
+  fetchRecommendedForProduct,
+  fetchFavorites,
+  addFavorite,
+  removeFavorite,
+  type ProductDetail,
+  type ProductRisk,
+  type ProductMin,
+} from '../api/products';
+import { fetchReviewsByProduct, createReview, updateReview, deleteReview, type ProductReview } from '../api/reviews';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+
+const sentimentPill = (label?: string) => {
+  const map: Record<string, string> = {
+    positive: 'bg-emerald-100 text-emerald-800',
+    neutral: 'bg-blue-100 text-blue-800',
+    negative: 'bg-red-100 text-red-800',
+  };
+  const key = (label || '').toLowerCase();
+  const cls = map[key] || 'bg-gray-100 text-gray-800';
+  const text: Record<string, string> = { positive: 'Tích cực', neutral: 'Trung lập', negative: 'Tiêu cực' };
+  return <span className={`text-xs px-2 py-1 rounded-full ${cls}`}>{text[key] || label || 'Không rõ'}</span>;
+};
+
+const RiskBadge: React.FC<{ risk?: ProductRisk }> = ({ risk }) => {
+  if (!risk) return null;
+  const { Risk_Level, Risk_Score } = risk;
+  const perc = Math.round((Risk_Score || 0) * 100);
+  const tone =
+    Risk_Level === 'Cao'
+      ? 'bg-red-50 border-red-200 text-red-700'
+      : Risk_Level === 'Trung bình'
+      ? 'bg-amber-50 border-amber-200 text-amber-700'
+      : 'bg-emerald-50 border-emerald-200 text-emerald-700';
+  const dot =
+    Risk_Level === 'Cao' ? 'bg-red-500' : Risk_Level === 'Trung bình' ? 'bg-amber-500' : 'bg-emerald-500';
+  return (
+    <div className={`flex items-start gap-3 p-3 border rounded-lg ${tone}`}>
+      <div className={`h-2.5 w-2.5 mt-2 rounded-full ${dot}`} />
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="h-4 w-4" />
+          <span className="font-medium">
+            {Risk_Level === 'Cao' ? 'Cảnh báo blacklist' : 'Cảnh báo rủi ro'}: {Risk_Level}
+          </span>
+          <span className="text-xs opacity-70">({perc}%)</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const RiskReasons: React.FC<{ reasons?: string[] }> = ({ reasons }) => {
+  if (!reasons || reasons.length === 0) return null;
+  return (
+    <ul className="mt-2 space-y-1">
+      {reasons.map((r, i) => (
+        <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+          <Info className="h-4 w-4 mt-0.5 text-gray-400" />
+          <span>{r}</span>
+        </li>
+      ))}
+    </ul>
+  );
+};
+
+const currency = (v?: number | string) => {
+  if (typeof v === 'number') return v.toLocaleString('vi-VN') + ' đ';
+  if (typeof v === 'string') {
+    const n = Number(v);
+    if (!Number.isNaN(n)) return n.toLocaleString('vi-VN') + ' đ';
+  }
+  return '';
+};
+
+const ProductDetailPage: React.FC = () => {
+  const navigate = useNavigate();
+  const handleBack = () => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate('/products');
+  };
+
+  const { id } = useParams();
+  const productId = useMemo(() => Number(id), [id]);
+
+  const [detail, setDetail] = useState<ProductDetail | null>(null);
+  const [risk, setRisk] = useState<ProductRisk | undefined>(undefined);
+  const [recs, setRecs] = useState<ProductMin[]>([]);
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isFavorite, setIsFavorite] = useState<boolean>(false);
+  const [favLoading, setFavLoading] = useState<boolean>(false);
+  const [newRating, setNewRating] = useState<number>(5);
+  const [newComment, setNewComment] = useState<string>('');
+  const [editingReview, setEditingReview] = useState<ProductReview | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [recsShowAll, setRecsShowAll] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    setError(null);
+
+    (async () => {
+      try {
+        const [d, r, rs, rv] = await Promise.all([
+          fetchProductDetail(productId),
+          fetchProductRisk(productId).catch(() => undefined),
+          fetchRecommendedForProduct(productId, 6).catch(() => []),
+          fetchReviewsByProduct(productId).catch(() => []),
+        ]);
+        if (!mounted) return;
+        setDetail(d);
+        setRisk(r);
+        setRecs(rs);
+        setReviews(rv);
+        try {
+          const favs = await fetchFavorites();
+          const found = !!favs.find((f) => f.Product_ID === d.Product_ID);
+          setIsFavorite(found);
+        } catch {
+          setIsFavorite(false);
+        }
+      } catch (e: any) {
+        if (!mounted) return;
+        setError(e?.message || 'Không tải được chi tiết sản phẩm');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [productId]);
+
+  const imageSrc = detail?.Image_Full_URL || detail?.Image_URL || '';
+
+  if (loading) {
+    return (
+      <div className="max-w-6xl mx-auto p-4">
+        <div className="animate-pulse">
+          <div className="h-8 w-48 bg-gray-200 rounded mb-4" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="h-72 bg-gray-200 rounded" />
+            <div className="space-y-3">
+              <div className="h-6 w-2/3 bg-gray-200 rounded" />
+              <div className="h-4 w-1/2 bg-gray-200 rounded" />
+              <div className="h-4 w-1/3 bg-gray-200 rounded" />
+              <div className="h-10 w-40 bg-gray-200 rounded mt-6" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !detail) {
+    return (
+      <div className="max-w-4xl mx-auto p-4">
+        <button onClick={handleBack} className="inline-flex items-center text-emerald-600 hover:underline">
+          <ArrowLeft className="h-4 w-4 mr-1" /> Quay lại sản phẩm
+        </button>
+
+        <div className="mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded">{error || 'Không tìm thấy sản phẩm'}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-6xl mx-auto p-4 space-y-8">
+      <div className="flex items-center justify-between">
+        <button onClick={handleBack} className="inline-flex items-center text-emerald-600 hover:underline">
+          <ArrowLeft className="h-4 w-4 mr-1" /> Quay lại sản phẩm
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-white rounded-2xl shadow border border-gray-100 p-4 md:p-6">
+        <div className="lg:col-span-7">
+          <div className="relative rounded-2xl overflow-hidden border border-gray-100 shadow-sm bg-gray-50 h-[320px] md:h-[420px] flex items-center justify-center">
+            {imageSrc ? (
+              <img src={imageSrc} alt={detail.Product_Name} className="max-h-full max-w-full object-contain" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-gray-400">Không có ảnh</div>
+            )}
+          </div>
+        </div>
+
+        <div className="lg:col-span-5 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="text-2xl font-bold text-gray-900 flex-1 leading-tight">{detail.Product_Name}</h1>
+            <button
+              aria-label={isFavorite ? 'Bỏ yêu thích' : 'Thêm vào yêu thích'}
+              onClick={async () => {
+                setFavLoading(true);
+                try {
+                  if (isFavorite) {
+                    await removeFavorite(detail.Product_ID);
+                    setIsFavorite(false);
+                  } else {
+                    await addFavorite(detail.Product_ID);
+                    setIsFavorite(true);
+                  }
+                } catch (e: any) {
+                  alert(e?.message || 'Vui lòng đăng nhập để sử dụng yêu thích.');
+                } finally {
+                  setFavLoading(false);
+                }
+              }}
+              className={`shrink-0 inline-flex items-center justify-center rounded-full border px-3 py-2 text-sm ${
+                isFavorite ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+              }`}
+              disabled={favLoading}
+            >
+              <Heart className={`h-5 w-5 ${isFavorite ? 'fill-rose-500 text-rose-500' : ''}`} />
+              <span className="ml-1 hidden sm:inline">{isFavorite ? 'Đã yêu thích' : 'Yêu thích'}</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-xs text-gray-700">
+            {detail.Source && <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 ring-1 ring-purple-100">Nguồn: {detail.Source}</span>}
+            {detail.Brand && <span className="px-2.5 py-1 rounded-full bg-gray-50 ring-1 ring-gray-200">Thương hiệu: {detail.Brand}</span>}
+            {detail.Origin && <span className="px-2.5 py-1 rounded-full bg-gray-50 ring-1 ring-gray-200">Xuất xứ: {detail.Origin}</span>}
+            {detail.warning && <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-100">{detail.warning}</span>}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-gray-600">
+            {typeof detail.Avg_Rating === 'number' && (
+              <div className="flex items-center gap-2 bg-gray-50 rounded-lg border border-gray-100 px-3 py-2 shadow-sm">
+                <Star className="h-4 w-4 text-yellow-400 fill-yellow-400" />
+                <span className="font-semibold text-gray-800">{detail.Avg_Rating.toFixed(1)} / 5</span>
+              </div>
+            )}
+            {typeof detail.Review_Count === 'number' && (
+              <div className="flex items-center gap-2 bg-gray-50 rounded-lg border border-gray-100 px-3 py-2 shadow-sm">
+                <Info className="h-4 w-4 text-emerald-500" />
+                <span>{detail.Review_Count} đánh giá</span>
+              </div>
+            )}
+            {detail.Sentiment_Label && (
+              <div className="flex items-center gap-2 bg-gray-50 rounded-lg border border-gray-100 px-3 py-2 shadow-sm">
+                {sentimentPill(detail.Sentiment_Label)}
+              </div>
+            )}
+          </div>
+
+          <div className="text-3xl font-semibold text-emerald-600">{currency(detail.Price)}</div>
+
+          {detail.Description && (
+            <div className="mt-4">
+              <h3 className="font-medium mb-2">Mô tả</h3>
+              <div className={`relative ${descExpanded ? '' : 'max-h-48 overflow-hidden'}`}>
+                <p className="text-gray-700 leading-relaxed whitespace-pre-line">{detail.Description}</p>
+                {!descExpanded && (
+                  <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-white to-transparent" />
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setDescExpanded((v) => !v)}
+                className="mt-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+              >
+                {descExpanded ? (
+                  <span className="inline-flex items-center">
+                    Thu gọn <ChevronUp className="h-4 w-4 ml-1" />
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center">
+                    Xem thêm <ChevronDown className="h-4 w-4 ml-1" />
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
+
+          {detail.Product_URL && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <a
+                href={detail.Product_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center px-5 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Xem trên trang gốc
+              </a>
+              <button
+                type="button"
+                className="inline-flex items-center px-4 py-2 rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50"
+              >
+                <ShoppingCart className="h-4 w-4 mr-1" /> Thêm vào giỏ (giả lập)
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="md:col-span-2 space-y-6">
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <h3 className="text-lg font-semibold mb-4">Viết đánh giá</h3>
+            <div className="mb-3">
+              <label className="block text-sm text-gray-700 mb-1">Điểm đánh giá</label>
+              <div className="flex items-center gap-2">
+                {[1, 2, 3, 4, 5].map((v) => (
+                  <button key={v} onClick={() => setNewRating(v)} className={`${v <= newRating ? 'text-yellow-400' : 'text-gray-300'}`}>
+                    <Star className="h-6 w-6" />
+                  </button>
+                ))}
+                <span className="text-sm text-gray-600">{newRating}/5</span>
+              </div>
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm text-gray-700 mb-1">Nhận xét</label>
+              <textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                className="w-full border border-gray-300 rounded-md p-2"
+                rows={3}
+                placeholder="Chia sẻ trải nghiệm của bạn..."
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                disabled={isSubmitting}
+                onClick={async () => {
+                  try {
+                    setIsSubmitting(true);
+                    if (editingReview) {
+                      const updated = await updateReview(editingReview.review_id, newRating, newComment);
+                      setReviews((prev) => prev.map((r) => (r.review_id === updated.review_id ? updated : r)));
+                      setEditingReview(null);
+                    } else {
+                      const created = await createReview(detail.Product_ID, newRating, newComment);
+                      setReviews((prev) => [created, ...prev]);
+                    }
+                    setNewComment('');
+                    setNewRating(5);
+                  } catch (e: any) {
+                    alert(e?.message || 'Vui lòng đăng nhập để đánh giá.');
+                  } finally {
+                    setIsSubmitting(false);
+                  }
+                }}
+                className={`px-4 py-2 rounded-md text-white ${isSubmitting ? 'bg-emerald-400' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+              >
+                {editingReview ? 'Cập nhật đánh giá' : 'Gửi đánh giá'}
+              </button>
+              {editingReview && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingReview(null);
+                    setNewComment('');
+                    setNewRating(5);
+                  }}
+                  className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                >
+                  Hủy
+                </button>
+              )}
+            </div>
+          </div>
+
+          {reviews.length > 0 ? (
+            <div className="space-y-4">
+              {reviews.map((rv) => (
+                <div key={rv.review_id} className="bg-white border border-gray-200 rounded-lg p-4">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-sm text-gray-500">{new Date(rv.created_at).toLocaleString('vi-VN')}</div>
+                        <div className="flex items-center">
+                          {[...Array(5)].map((_, i) => (
+                            <Star
+                              key={i}
+                              className={`h-4 w-4 ${i < rv.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      {rv.comment && <p className="text-gray-700 text-sm">{rv.comment}</p>}
+                    </div>
+                    <div className="flex space-x-2 ml-4">
+                      <button
+                        className="text-blue-600 hover:text-blue-800 p-1"
+                        onClick={() => {
+                          setEditingReview(rv);
+                          setNewRating(rv.rating);
+                          setNewComment(rv.comment || '');
+                        }}
+                        title="Chỉnh sửa"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
+                        className="text-red-600 hover:text-red-800 p-1"
+                        onClick={async () => {
+                          try {
+                            await deleteReview(rv.review_id);
+                            setReviews((prev) => prev.filter((r) => r.review_id !== rv.review_id));
+                          } catch (e: any) {
+                            alert(e?.message || 'Không thể xóa đánh giá');
+                          }
+                        }}
+                        title="Xóa"
+                      >
+                        <Trash className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-10 bg-gray-50 rounded-lg">
+              <p className="text-gray-500">Chưa có đánh giá nào. Hãy là người đầu tiên chia sẻ trải nghiệm!</p>
+            </div>
+          )}
+        </div>
+
+        <div className="md:col-span-1">
+          <div className="bg-white rounded-lg border p-4 md:sticky md:top-6 space-y-4">
+            <h4 className="font-medium mb-2">Mua nhanh</h4>
+            <div className="flex gap-2">
+              <a href="https://shopee.vn" target="_blank" rel="noopener noreferrer" className="flex-1 p-2 bg-orange-500 text-white rounded text-center text-sm">
+                <ShoppingCart className="inline h-4 w-4 mr-1" /> Shopee
+              </a>
+              <a href="https://lazada.vn" target="_blank" rel="noopener noreferrer" className="flex-1 p-2 bg-blue-500 text-white rounded text-center text-sm">
+                <ShoppingCart className="inline h-4 w-4 mr-1" /> Lazada
+              </a>
+              <a href="https://tiki.vn" target="_blank" rel="noopener noreferrer" className="flex-1 p-2 bg-teal-500 text-white rounded text-center text-sm">
+                <ShoppingCart className="inline h-4 w-4 mr-1" /> Tiki
+              </a>
+            </div>
+            {typeof detail.Positive_Percent === 'number' && (
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-sm text-gray-600">Tích cực:</span>
+                <div className="flex items-center">
+                  <div className="w-32 h-2 bg-gray-200 rounded-full mr-2">
+                    <div className="h-2 bg-emerald-500 rounded-full" style={{ width: `${detail.Positive_Percent}%` }} />
+                  </div>
+                  <span className="text-sm font-medium">{detail.Positive_Percent}%</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Risk + Sentiment block positioned below image/info to balance layout */}
+      {(risk || typeof detail.Positive_Percent === 'number') && (
+        <div className="bg-white rounded-2xl shadow border border-gray-100 p-4 md:p-6 space-y-4">
+          <div className="space-y-3">
+            <RiskBadge risk={risk} />
+            <RiskReasons reasons={risk?.Reasons} />
+          </div>
+
+          {typeof detail.Positive_Percent === 'number' && (
+            <div className="mt-2">
+              <h3 className="font-medium mb-2">Tổng quan cảm xúc</h3>
+              <RatingBar
+                positive={Math.round(detail.Positive_Percent)}
+                neutral={Math.max(0, 100 - Math.round(detail.Positive_Percent))}
+                negative={0}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {recs.length > 0 && (
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-4">Sản phẩm gợi ý cho bạn</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {(recsShowAll ? recs : recs.slice(0, 4)).map((p) => (
+              <Link
+                key={p.Product_ID}
+                to={`/product/${p.Product_ID}`}
+                className="group bg-white rounded-xl border hover:shadow transition overflow-hidden"
+              >
+                <div className="h-40 overflow-hidden">
+                  <img
+                    src={p.Image_URL}
+                    alt={p.Product_Name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  />
+                </div>
+                <div className="p-3">
+                  <h4 className="text-sm font-medium line-clamp-2 group-hover:text-emerald-600">{p.Product_Name}</h4>
+                  <div className="mt-1 flex items-center justify-between text-sm">
+                    <span className="text-emerald-600 font-medium">{currency(p.Price)}</span>
+                    <span className="inline-flex items-center gap-1 text-gray-600">
+                      <Star className="h-4 w-4 text-yellow-400" />{' '}
+                      {p.Avg_Rating && typeof p.Avg_Rating === 'number' ? p.Avg_Rating.toFixed(1) : p.Avg_Rating}
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+          {recs.length > 4 && (
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setRecsShowAll((v) => !v)}
+                className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                {recsShowAll ? 'Thu gọn gợi ý' : 'Xem thêm gợi ý'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ProductDetailPage;
+

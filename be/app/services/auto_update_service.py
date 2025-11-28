@@ -1,140 +1,64 @@
 from __future__ import annotations
 from typing import Any, Dict, Optional, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# ===============================================================
-#  AUTO UPDATE PRODUCTS SERVICE
-# ---------------------------------------------------------------
-# 🎯 Mục tiêu:
-# - Tự động cập nhật lại dữ liệu sản phẩm trong bảng Products
-# - Lấy dữ liệu mới nhất từ API Tiki cho mỗi sản phẩm.
-# - Nếu sản phẩm không còn tồn tại trên Tiki → đánh dấu Is_Active = False.
-# - Cập nhật đồng thời:
-#     • Price
-#     • Avg_Rating  
-#     • Review_Count
-#     • Positive_Percent
-# ---------------------------------------------------------------
-# 🔁 Quy trình xử lý:
-# 1️⃣ Lấy toàn bộ danh sách sản phẩm từ bảng Products.
-# 2️⃣ Với mỗi sản phẩm:
-#     - Gọi API https://tiki.vn/api/v2/products/{External_ID}
-#     - Nếu không trả dữ liệu hoặc lỗi → gán Is_Active = False.
-#     - Nếu có dữ liệu:
-#           Cập nhật các trường chi tiết sản phẩm mới nhất.
-#           Cập nhật điểm rating, review_count, positive_percent.
-#     - Gọi get_product_reviews(product_id) để lấy comment mới.
-#     - Gọi update_product_sentiment(db, product_id)
-#           → cập nhật lại Sentiment_Score & Sentiment_Label.
-# 3️⃣ Ghi log số sản phẩm được cập nhật, số sản phẩm bị vô hiệu hóa.
-# 4️⃣ Cập nhật Updated_At = NOW() để đánh dấu lần cập nhật cuối.
-# 5️⃣ Commit sau mỗi sản phẩm (hoặc batch commit nếu muốn tối ưu).
-#
-# ---------------------------------------------------------------
-# ⚙️ Các hàm liên quan cần dùng:
-# - get_product_detail(product_id)       → crawler_tiki.py
-# - get_product_reviews(product_id)      → crawler_tiki.py
-# - update_product_sentiment(db, id)     → sentiment_analysis.py
-#
-# ---------------------------------------------------------------
-# 📦 Dữ liệu lưu lại trong DB:
-# | Cột                | Nguồn dữ liệu          |
-# |--------------------|------------------------|
-# | Price              | API Tiki               |
-# | Avg_Rating         | API Tiki               |
-# | Review_Count       | API Tiki               |
-# | Positive_Percent   | API Tiki               |
-# | Sentiment_Score    | Sentiment Analysis     |
-# | Sentiment_Label    | Sentiment Analysis     |
-# | Updated_At         | Local UTC time         |
-# | Is_Active          | False nếu bị xóa       |
-#
-# ---------------------------------------------------------------
-# 🧠 Mở rộng gợi ý:
-# - Thêm retry logic khi gọi API (thử lại 3 lần nếu lỗi).
-# - Thêm scheduler chạy tự động mỗi 24h hoặc mỗi tuần.
-# - Ghi log chi tiết sản phẩm nào bị xóa / cập nhật thành công.
-# ---------------------------------------------------------------
-# 📂 File liên quan:
-# - app/services/auto_update_service.py      (file chính)
-# - app/services/crawler_tiki.py             (gọi API Tiki)
-# - app/services/sentiment_analysis.py       (phân tích cảm xúc)
-# - app/routes/admin_routes.py               (endpoint thủ công)
-# ---------------------------------------------------------------
-# ✅ Endpoint gợi ý:
-# POST /admin/force-update-products
-#    → Thực hiện cập nhật toàn bộ sản phẩm trong DB.
-# ---------------------------------------------------------------
-# ===============================================================
-# app/services/auto_update_service.py
-
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from ..crud import products as product_crud
-from ..services import sentiment_service
-
-def auto_update_sentiment(db: Session):
-    """
-    Tự động cập nhật sentiment cho các sản phẩm cũ hơn 24h
-    """
-    try:
-        # Lấy thời điểm 24h trước
-        cutoff_time = datetime.now() - timedelta(hours=24)
-        
-        # Lấy các sản phẩm cần cập nhật (có Updated_At cũ hơn 24h hoặc chưa có sentiment)
-        products_to_update = product_crud.get_products_need_sentiment_update(db, cutoff_time)
-        
-        updated_count = 0
-        for product in products_to_update:
-            try:
-                # Cập nhật sentiment cho sản phẩm
-                sentiment_service.update_product_sentiment(db, product.Product_ID)
-                updated_count += 1
-            except Exception as e:
-                print(f"Error updating sentiment for product {product.Product_ID}: {e}")
-                continue
-        
-        return {
-            "status": "success",
-            "message": f"Auto-update completed. Updated {updated_count} products.",
-            "updated_count": updated_count,
-            "total_checked": len(products_to_update)
-        }
-        
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Auto-update failed: {str(e)}"
-        }
-from sqlalchemy.orm import Session
-
-from app.crud import products as product_crud
 from app.database import SessionLocal
 from app.models.products import Products
 from app.services import crawler_tiki_service as tiki
 from app.services.crawler_tiki_service import get_reviews_summary
 from app.services.sentiment_service import update_product_sentiment
 
-
 def _refresh_single_product(db: Session, product: Products) -> Dict[str, Any]:
-    """Cập nhật 1 sản phẩm: price/rating/review/positive + sentiment."""
     detail = tiki.get_product_detail(int(product.External_ID))
-    if not detail:
+    # -------- CASE 1: TIKI XÓA THẬT (404) --------
+    if detail == "NOT_FOUND":
         updated = product_crud.update_product(db, product, {"Is_Active": False})
         return {
             "product_id": updated.Product_ID,
             "external_id": updated.External_ID,
-            "status": "deactivated",
+            "status": "deactivated_404",
+        }
+    # -------- CASE 2: API ERROR → KHÔNG deactivate --------
+    if detail == "API_ERROR" or detail is None:
+        return {
+            "product_id": product.Product_ID,
+            "external_id": product.External_ID,
+            "status": "skipped_api_error",
         }
 
+    # -------- CASE 3: CHECK tồn kho --------
+    inv = detail.get("inventory_status")
+    deactivate_states = ["out_of_stock", "discontinued", "unavailable"]
+
+    # 3A. Hết hàng → deactivate
+    if inv in deactivate_states:
+        updated = product_crud.update_product(db, product, {"Is_Active": False})
+        return {
+            "product_id": updated.Product_ID,
+            "external_id": updated.External_ID,
+            "status": f"deactivated_{inv}",
+        }
+
+    # 3B. Còn hàng → set active
+    if inv == "available":
+        product_crud.update_product(db, product, {"Is_Active": True})
+
+    # 3C. Các trường hợp NULL/unknown → skip
+    if inv not in deactivate_states and inv != "available":
+        return {
+            "product_id": product.Product_ID,
+            "external_id": product.External_ID,
+            "status": f"skipped_inventory_{inv}",
+        }
+
+    # -------- CASE 4: UPDATE FULL DATA --------
     summary = get_reviews_summary(int(product.External_ID))
-    
-    #lấy thumbnail và tạo ảnh full-size
+
     thumb = detail.get("thumbnail_url")
-    # Tạo ảnh full-size bằng cách bỏ cache/280x280
-    full_img = None
-    if thumb:
-        full_img = thumb.replace("/cache/280x280", "")
+    full_img = thumb.replace("/cache/280x280", "") if thumb else None
+
     patch = {
         "Image_URL": thumb,
         "Image_Full_URL": full_img,
@@ -144,9 +68,11 @@ def _refresh_single_product(db: Session, product: Products) -> Dict[str, Any]:
         "Positive_Percent": summary.get("positive_percent"),
         "Is_Active": True,
     }
+
     patch = {k: v for k, v in patch.items() if v is not None}
 
     updated = product_crud.update_product(db, product, patch)
+
     sentiment_score = update_product_sentiment(db, updated.Product_ID)
 
     return {
@@ -155,7 +81,6 @@ def _refresh_single_product(db: Session, product: Products) -> Dict[str, Any]:
         "status": "updated",
         "sentiment_score": sentiment_score,
     }
-
 
 def _process_product(product_id: int, external_id: int) -> Dict[str, Any]:
     """Worker: mở Session riêng để thread-safe."""
@@ -192,22 +117,22 @@ def auto_update_products(
     limit: Optional[int] = None,
     workers: int = 8,
 ) -> Dict[str, Any]:
-    """Refresh các trường động cho sản phẩm Tiki cũ hơn N giờ thông qua threadpool."""
+
     products = product_crud.get_tiki_products_older_than(db, hours=older_than_hours)
     work_items: List[tuple[int, int]] = [
         (p.Product_ID, int(p.External_ID))
         for p in products
         if p.External_ID
     ]
+
     if limit and limit > 0:
         work_items = work_items[:limit]
 
     total = len(work_items)
-    stats = {
+
+    # stats auto tạo dynamic
+    stats: Dict[str, Any] = {
         "total": total,
-        "updated": 0,
-        "deactivated": 0,
-        "errors": 0,
         "items": [],
     }
 
@@ -221,18 +146,21 @@ def auto_update_products(
     )
 
     processed = 0
-    progress_step = max(1, total // 10)  # log mỗi 10% hoặc ít nhất mỗi 1 item
+    progress_step = max(1, total // 10)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
             executor.submit(_process_product, pid, ext_id): (pid, ext_id)
             for pid, ext_id in work_items
         }
+
         for future in as_completed(futures):
+
             pid, ext_id = futures[future]
+
             try:
                 result = future.result()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 result = {
                     "product_id": pid,
                     "external_id": ext_id,
@@ -240,13 +168,10 @@ def auto_update_products(
                     "error": str(exc),
                 }
 
-            status = result.get("status")
-            if status == "updated":
-                stats["updated"] += 1
-            elif status == "deactivated":
-                stats["deactivated"] += 1
-            elif status == "error":
-                stats["errors"] += 1
+            status = result.get("status", "unknown")
+
+            # Tự tạo counter, khỏi cần if-else
+            stats[status] = stats.get(status, 0) + 1
 
             stats["items"].append(result)
 
@@ -254,15 +179,12 @@ def auto_update_products(
             if processed % progress_step == 0 or processed == total:
                 print(
                     f"[AutoUpdate] Progress: {processed}/{total} "
-                    f"(updated={stats['updated']}, "
-                    f"deactivated={stats['deactivated']}, "
-                    f"errors={stats['errors']})"
+                    + ", ".join([f"{k}={v}" for k, v in stats.items() if k not in ("total","items")])
                 )
 
     print(
-        f"[AutoUpdate] Hoàn tất batch: total={stats['total']}, "
-        f"updated={stats['updated']}, "
-        f"deactivated={stats['deactivated']}, "
-        f"errors={stats['errors']}"
+        "\n[AutoUpdate] Hoàn tất batch:",
+        ", ".join([f"{k}={v}" for k, v in stats.items() if k not in ("items")])
     )
+
     return stats
