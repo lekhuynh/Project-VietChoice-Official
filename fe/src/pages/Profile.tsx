@@ -1,6 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react';
-import { UserIcon, ClockIcon, HistoryIcon, LogOutIcon } from 'lucide-react';
-import { type Conversation } from '../types';
+import { UserIcon, ClockIcon, HistoryIcon, LogOutIcon, Heart } from 'lucide-react';
 import { fetchUserProfile, updateUserProfile, changePassword, type UserProfile } from '../api/user';
 import {
   fetchSearchHistory,
@@ -12,12 +11,12 @@ import {
   type SearchHistoryItem,
   type ViewedHistoryItem,
 } from '../api/history';
+import { fetchFavorites, removeFavorite, type FavoriteProduct } from '../api/products';
 import Auth from './Auth';
 import { logout as apiLogout } from '../api/auth';
 
 const Profile: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'search-history' | 'view-history' | 'conversations'>('profile');
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [activeTab, setActiveTab] = useState<'profile' | 'search-history' | 'view-history' | 'favorites'>('profile');
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [nameInput, setNameInput] = useState('');
@@ -25,8 +24,11 @@ const Profile: React.FC = () => {
 
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
   const [viewedHistory, setViewedHistory] = useState<ViewedHistoryItem[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteProduct[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [favoritesError, setFavoritesError] = useState<string | null>(null);
   const [unauthenticated, setUnauthenticated] = useState(false);
 
   // Change password states
@@ -95,6 +97,7 @@ const Profile: React.FC = () => {
   useEffect(() => {
     loadProfile();
     loadHistories();
+    loadFavorites();
   }, []);
 
   const handleUpdateProfile = async () => {
@@ -123,6 +126,38 @@ const Profile: React.FC = () => {
   const handleClearViewedHistory = async () => {
     await deleteAllViewedHistory();
     setViewedHistory([]);
+  };
+
+  const loadFavorites = async () => {
+    setLoadingFavorites(true);
+    setFavoritesError(null);
+    try {
+      const favs = await fetchFavorites();
+      setFavorites(favs || []);
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (msg.toLowerCase().includes('unauthenticated')) {
+        setUnauthenticated(true);
+      } else {
+        setFavoritesError(msg || 'Khong tai duoc danh sach yeu thich');
+      }
+    } finally {
+      setLoadingFavorites(false);
+    }
+  };
+
+  const handleRemoveFavorite = async (productId: number) => {
+    try {
+      await removeFavorite(productId);
+      setFavorites((prev) => prev.filter((f) => f.Product_ID !== productId));
+    } catch (e: any) {
+      setFavoritesError(e?.message || 'Khong xoa duoc khoi danh sach yeu thich');
+    }
+  };
+
+  const formatCurrency = (value?: number) => {
+    if (typeof value !== 'number') return '';
+    return value.toLocaleString('vi-VN') + ' đ';
   };
 
   const handleLogout = async () => {
@@ -217,14 +252,11 @@ const Profile: React.FC = () => {
             Lịch sử đã xem
           </button>
           <button
-            className={`flex items-center px-4 py-3 ${activeTab === 'conversations' ? 'text-emerald-600 border-b-2 border-emerald-600' : 'text-gray-600 hover:text-gray-800'}`}
-            onClick={() => {
-              setActiveTab('conversations');
-              setSelectedConversation(null);
-            }}
+            className={`flex items-center px-4 py-3 ${activeTab === 'favorites' ? 'text-emerald-600 border-b-2 border-emerald-600' : 'text-gray-600 hover:text-gray-800'}`}
+            onClick={() => setActiveTab('favorites')}
           >
-            <HistoryIcon className="h-5 w-5 mr-2" />
-            Lịch sử trò chuyện
+            <Heart className="h-5 w-5 mr-2" />
+            Danh sách yêu thích
           </button>
         </div>
         <div className="p-6">
@@ -401,34 +433,45 @@ const Profile: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'conversations' && !selectedConversation && (
+          {activeTab === 'favorites' && (
             <div>
-              <h3 className="font-medium mb-4">Lịch sử trò chuyện</h3>
-              <p className="text-gray-500">Hiện chưa có API trò chuyện trong backend được đồng bộ. Phần này sẽ được bổ sung sau.</p>
-            </div>
-          )}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Heart className="h-5 w-5 text-rose-500" />
+                  <h3 className="font-medium">Danh sách yêu thích</h3>
+                </div>
+                {favorites.length > 0 && <span className="text-sm text-gray-500">{favorites.length} sản phẩm</span>}
+              </div>
 
-          {activeTab === 'conversations' && selectedConversation && (
-            <div>
-              <div className="flex items-center mb-4">
-                <button className="text-emerald-600 mr-2" onClick={() => setSelectedConversation(null)}>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M9.707 14.707a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 1.414L7.414 9H15a1 1 0 110 2H7.414l2.293 2.293a1 1 0 010 1.414z" clipRule="evenodd" />
-                  </svg>
-                </button>
-                <h3 className="font-medium">{selectedConversation.title}</h3>
-                <span className="text-xs text-gray-500 ml-2">{formatDate(selectedConversation.timestamp)}</span>
-              </div>
-              <div className="bg-gray-50 rounded-md p-4 space-y-4">
-                {selectedConversation.messages.map((message) => (
-                  <div key={message.id} className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] rounded-lg p-3 ${message.sender === 'user' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-800 border border-gray-200'}`}>
-                      <div>{message.content}</div>
-                      <div className="text-xs mt-1 opacity-70">{formatDate(message.timestamp)}</div>
+              {loadingFavorites ? (
+                <div className="text-center text-gray-500 py-6">Đang tải danh sách yêu thích...</div>
+              ) : favoritesError ? (
+                <div className="text-red-600 text-sm">{favoritesError}</div>
+              ) : favorites.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {favorites.map((f) => (
+                    <div
+                      key={f.Product_ID}
+                      className="flex items-center gap-3 p-3 bg-gray-50 rounded-md hover:bg-gray-100 border border-gray-100"
+                    >
+                      <a href={`/product/${f.Product_ID}`} className="flex items-center gap-3 flex-1">
+                        <img src={f.Image_URL || ''} alt={f.Product_Name} className="w-12 h-12 object-cover rounded" />
+                        <div>
+                          <div className="font-medium line-clamp-1">{f.Product_Name}</div>
+                          <div className="text-xs text-gray-500">
+                            {formatCurrency(f.Price)} {f.Avg_Rating ? `· ${f.Avg_Rating.toFixed(1)} ★` : ''}
+                          </div>
+                        </div>
+                      </a>
+                      <button className="text-xs text-red-600 hover:underline" onClick={() => handleRemoveFavorite(f.Product_ID)}>
+                        Bỏ yêu thích
+                      </button>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-4">Bạn chưa có sản phẩm yêu thích nào.</p>
+              )}
             </div>
           )}
         </div>

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.favorite_service import (
     add_favorite,
-    get_user_favorites,
+    get_user_favorites_with_products,
     remove_favorite,
     remove_all_favorites
 )
@@ -44,7 +44,7 @@ def get_favorite_products(
     if not current_user:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    favorites = get_user_favorites(db, user_id=current_user.User_ID)
+    favorites = get_user_favorites_with_products(db, user_id=current_user.User_ID)
     return {"user_id": current_user.User_ID, "favorites": favorites}
 
 

@@ -10,6 +10,7 @@ import {
   Heart,
   ChevronDown,
   ChevronUp,
+  ThumbsUp,
 } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import RatingBar from '../components/products/RatingBar';
@@ -457,27 +458,40 @@ const ProductDetailPage: React.FC = () => {
       {recs.length > 0 && (
         <div className="mt-10">
           <h3 className="text-lg font-semibold mb-4">Sản phẩm gợi ý cho bạn</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
             {(recsShowAll ? recs : recs.slice(0, 4)).map((p) => (
               <Link
                 key={p.Product_ID}
                 to={`/product/${p.Product_ID}`}
-                className="group bg-white rounded-xl border hover:shadow transition overflow-hidden"
+                className="group bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition overflow-hidden"
               >
-                <div className="h-40 overflow-hidden">
-                  <img
-                    src={p.Image_URL}
-                    alt={p.Product_Name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                  />
+                <div className="h-44 bg-gray-50 flex items-center justify-center overflow-hidden">
+                  {p.Image_URL ? (
+                    <img
+                      src={p.Image_URL}
+                      alt={p.Product_Name}
+                      className="h-full object-contain group-hover:scale-105 transition-transform"
+                    />
+                  ) : (
+                    <div className="text-gray-400 text-sm">Không có ảnh</div>
+                  )}
                 </div>
-                <div className="p-3">
-                  <h4 className="text-sm font-medium line-clamp-2 group-hover:text-emerald-600">{p.Product_Name}</h4>
-                  <div className="mt-1 flex items-center justify-between text-sm">
-                    <span className="text-emerald-600 font-medium">{currency(p.Price)}</span>
-                    <span className="inline-flex items-center gap-1 text-gray-600">
-                      <Star className="h-4 w-4 text-yellow-400" />{' '}
-                      {p.Avg_Rating && typeof p.Avg_Rating === 'number' ? p.Avg_Rating.toFixed(1) : p.Avg_Rating}
+                <div className="p-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-gray-900 line-clamp-2 group-hover:text-emerald-600">
+                    {p.Product_Name}
+                  </h4>
+                  <div className="flex items-start justify-between text-sm">
+                    <span className="text-emerald-600 font-semibold">{currency(p.Price)}</span>
+                    {p.Brand ? <span className="text-gray-500">{p.Brand}</span> : null}
+                  </div>
+                  <div className="flex items-center gap-4 text-sm text-gray-700">
+                    <span className="inline-flex items-center gap-1">
+                      <Star className="h-4 w-4 text-yellow-400" />
+                      {typeof p.Avg_Rating === 'number' ? p.Avg_Rating.toFixed(1) : p.Avg_Rating || '-'}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <ThumbsUp className="h-4 w-4 text-emerald-500" />
+                      {typeof p.Positive_Percent === 'number' ? `${Math.round(p.Positive_Percent)}%` : '--%'}
                     </span>
                   </div>
                 </div>

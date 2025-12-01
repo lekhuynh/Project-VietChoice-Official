@@ -21,23 +21,30 @@ _MODEL_NAME = "dangvantuan/vietnamese-document-embedding"
 _DEVICE = "cpu"
 
 _POSITIVE_ANCHORS = [
-    "rất tốt",
-    "tuyệt vời",
-    "hài lòng",
-    "xuất sắc",
-    "chất lượng",
-    "đáng mua",
-    "ổn",
+    "rất tốt", "tuyệt vời", "quá tuyệt", "ưng ý", "hài lòng",
+    "rất hài lòng", "đáng mua", "đáng tiền", "đáng trải nghiệm",
+    "chất lượng", "chất lượng tốt", "xịn", "xịn sò", "siêu xịn",
+    "siêu ngon", "tốt như mô tả", "đúng mô tả", "chuẩn mô tả",
+    "đẹp", "cực đẹp", "giao nhanh", "đóng gói đẹp", "đóng gói kĩ",
+    "uy tín", "shop uy tín", "sản phẩm tuyệt vời", "rất ok",
+    "ổn áp", "giá tốt", "giá hợp lý", "phù hợp", "xài thích",
+    "hoạt động tốt", "bền", "êm", "tốt hơn mong đợi",
+    "rất đáng mua", "nên mua", "mua lại lần nữa",
+    "shop hỗ trợ tốt", "thái độ tốt", "nhiệt tình",
 ]
+
 _NEGATIVE_ANCHORS = [
-    "tệ",
-    "kém",
-    "thất vọng",
-    "hỏng",
-    "lỗi",
-    "quá tệ",
-    "kém chất lượng",
+    "tệ", "quá tệ", "kém", "kém chất lượng", "rất tệ",
+    "thất vọng", "cực kỳ thất vọng", "không đáng tiền",
+    "không giống mô tả", "sai mô tả", "lừa đảo", "hàng giả",
+    "hàng nhái", "fake", "không như hình", "không như mô tả",
+    "đóng gói tệ", "giao hàng chậm", "rất chậm", "bị lỗi",
+    "hỏng", "không dùng được", "không hoạt động", "vỡ",
+    "rách", "bẩn", "xấu", "đồ rác", "không phù hợp",
+    "shop tệ", "dịch vụ tệ", "thái độ tệ", "chất lượng quá kém",
+    "đừng mua", "đừng nên mua", "nên tránh", "không đáng",
 ]
+
 
 
 def _select_device() -> str:
@@ -88,6 +95,14 @@ def _ensure_anchor_embeddings():
     _POS_EMBS, _NEG_EMBS = pos, neg
     return _POS_EMBS, _NEG_EMBS
 
+def _compute_score(pos_mean, neg_mean):
+    # softmax-style normalization
+    numerator = pos_mean - neg_mean
+    denominator = abs(pos_mean) + abs(neg_mean) + 1e-6
+    score = numerator / denominator
+
+    return float(max(-1.0, min(1.0, score)))
+
 
 def _score_with_model(texts: List[str]) -> Optional[List[float]]:
     model = _load_model()
@@ -100,14 +115,19 @@ def _score_with_model(texts: List[str]) -> Optional[List[float]]:
         arr = arr.to(_DEVICE)
     except Exception:
         pass
-    # cosine similarity since embeddings are normalized
+
+    # cosine similarity
     pos_sim = arr @ pos.T  # (n_texts, n_pos)
     neg_sim = arr @ neg.T  # (n_texts, n_neg)
+
     pos_mean = pos_sim.mean(dim=1)
     neg_mean = neg_sim.mean(dim=1)
-    raw = pos_mean - neg_mean  # roughly in [-2, 2]
-    scores = torch.clamp(raw / 2.0, -1.0, 1.0)
-    return scores.detach().cpu().tolist()
+
+    scores = []
+    for p, n in zip(pos_mean, neg_mean):
+        scores.append(_compute_score(float(p), float(n)))
+
+    return scores
 
 
 def analyze_comment(text: str) -> float:
@@ -123,8 +143,14 @@ def analyze_comment(text: str) -> float:
 
     # Heuristic fallback (no model available)
     t = text.lower()
-    positives = ["tuyệt", "tốt", "ok", "hài lòng", "ưng", "đẹp", "xuất sắc", "chất lượng"]
-    negatives = ["tệ", "kém", "xấu", "thất vọng", "dở", "lỗi", "hỏng", "chậm"]
+    positives = [
+    "tốt", "rất tốt", "tuyệt", "tuyệt vời", "ưng", "ưng ý",
+    "hài lòng", "ok", "ổn", "ổn áp", "chất lượng", "đẹp",
+    "đáng mua", "đáng tiền", "giao nhanh", "uy tín"]
+    negatives = [
+    "tệ", "quá tệ", "kém", "xấu", "thất vọng", "lỗi", "hỏng",
+    "không đáng", "không giống", "không như", "fake", "nhái",
+    "lừa đảo", "slow", "chậm", "bẩn", "rách", "vỡ"]
     score = 0
     for w in positives:
         if w in t:

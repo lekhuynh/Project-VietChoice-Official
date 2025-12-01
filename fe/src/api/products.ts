@@ -25,6 +25,8 @@ export interface ProductMin {
   Price: number;
   Avg_Rating: number;
   Sentiment_Label: string;
+  Positive_Percent?: number;
+  Brand?: string;
 }
 
 export interface FavoriteProduct extends ProductMin {
