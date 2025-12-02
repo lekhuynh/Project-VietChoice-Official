@@ -5,6 +5,7 @@ export interface ProductDetail {
   Product_ID: number;
   Product_Name: string;
   Image_URL?: string;
+  Image_Full_URL?: string;
   Price?: number;
   Source?: string;
   Description?: string;
@@ -16,6 +17,8 @@ export interface ProductDetail {
   Origin?: string;
   Brand?: string;
   Product_URL?: string;
+  Is_Active?: boolean;
+  warning?: string;
 }
 
 export interface ProductMin {
@@ -49,6 +52,9 @@ export interface ProductSearchResponse<T = ProductMin> {
   count: number;
   results: T[];
   ai_message?: string | null;
+  total?: number;
+  skip?: number;
+  limit?: number;
 }
 
 // Top rated (legacy helper)

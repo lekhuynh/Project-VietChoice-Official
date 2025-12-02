@@ -1,6 +1,6 @@
 import { type FC, useEffect, useRef, useState } from 'react';
 import { CameraIcon, XIcon, Loader2Icon } from 'lucide-react';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats, type Html5QrcodeCameraScanConfig } from 'html5-qrcode';
 import { API_BASE_URL } from '../../config';
 import { type Product } from '../../types';
 import { type ProductMin } from '../../api/products';
@@ -59,22 +59,26 @@ const BarcodeScanner: FC = () => {
     };
     const onScanFailure = (_: string) => {};
     try {
+      const scanConfig: Html5QrcodeCameraScanConfig & {
+        experimentalFeatures?: { useBarCodeDetectorIfSupported: boolean };
+        formatsToSupport?: Html5QrcodeSupportedFormats[];
+      } = {
+        fps: 10,
+        qrbox: 250,
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.QR_CODE,
+        ],
+      };
       await scannerRef.current.start(
         { facingMode: 'environment' },
-        {
-          fps: 10,
-          qrbox: 250,
-          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.QR_CODE,
-          ],
-        },
+        scanConfig,
         onScanSuccess,
         onScanFailure
       );
