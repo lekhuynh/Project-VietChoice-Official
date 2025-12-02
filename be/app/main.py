@@ -155,4 +155,3 @@ app.include_router(search_history.router)
 app.include_router(favorite.router)
 app.include_router(user_reviews.router)
 app.include_router(category_router)
-app.include_router(admin.router)  # ✅ Admin router đã được đăng ký

@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+*.log
+.env
+*.db
+*.sqlite3
+cache/
+data/
+logs/
+raw_data/
+*.pt
+*.bin

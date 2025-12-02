@@ -224,7 +224,8 @@ const Admin: React.FC = () => {
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
+        <div className="max-h-[70vh] overflow-y-auto">
+          <table className="min-w-full text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="text-left px-4 py-3">Tên</th>
@@ -262,6 +263,7 @@ const Admin: React.FC = () => {
           </tbody>
         </table>
         {products.length === 0 && <div className="p-6 text-center text-slate-500 text-sm">Chưa có sản phẩm</div>}
+        </div>
       </div>
     </div>
   );
@@ -270,7 +272,8 @@ const Admin: React.FC = () => {
     <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
       <div className="flex items-center p-4 text-sm font-semibold text-slate-700">Danh sách người dùng</div>
       <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
+        <div className="max-h-[70vh] overflow-y-auto">
+          <table className="min-w-full text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
               <th className="text-left px-4 py-3">Tên</th>
@@ -304,6 +307,7 @@ const Admin: React.FC = () => {
           </tbody>
         </table>
         {users.length === 0 && <div className="p-6 text-center text-slate-500 text-sm">Chưa có người dùng</div>}
+        </div>
       </div>
     </div>
   );
