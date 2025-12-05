@@ -15,6 +15,29 @@ from ..services.sentiment_service import analyze_comment, label_sentiment
 from ..services.http_async import get_json_with_session, bounded_gather
 
 
+def _run_coro_blocking(coro):
+    """Run an async coroutine without asyncio.run, isolating it from any running loop."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+def _run_coro_safely(coro):
+    """If already inside an event loop, offload to a temp thread; otherwise run directly."""
+    try:
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_run_coro_blocking, coro)
+                return future.result()
+    except RuntimeError:
+        # No running loop in this thread
+        pass
+    return _run_coro_blocking(coro)
+
+
 # ============================================================
 # =============== API CONSTANTS & HELPERS ====================
 # ============================================================
@@ -254,14 +277,7 @@ async def aget_reviews_summary(product_id: int, session: Optional[aiohttp.Client
 
 def get_reviews_summary(product_id: int) -> Dict[str, Any]:
     """Sync wrapper for aget_reviews_summary to reuse in sync flows."""
-    try:
-        return asyncio.run(aget_reviews_summary(product_id))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(aget_reviews_summary(product_id))
-        finally:
-            loop.close()
+    return _run_coro_safely(aget_reviews_summary(product_id))
 
 def fetch_tiki_reviews(product_id: int, limit: int = 20, page: int = 1, retry: int = 1) -> Optional[Dict[str, Any]]:
     """Lấy dữ liệu review từ API chính thức của Tiki."""
@@ -324,14 +340,7 @@ def get_product_detail(
     retry: int = 3
 ) -> Optional[Dict[str, Any]]:
     """Fetch product detail from Tiki API (async under the hood)."""
-    try:
-        return asyncio.run(aget_product_detail(product_id, referer=referer, retry=retry))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(aget_product_detail(product_id, referer=referer, retry=retry))
-        finally:
-            loop.close()
+    return _run_coro_safely(aget_product_detail(product_id, referer=referer, retry=retry))
 
 
 def get_product_reviews(
@@ -916,7 +925,7 @@ async def asearch_and_crawl_tiki_products(db: Session, keyword: str, limit: int 
                 summary_coro = aget_reviews_summary(pid, session=session)
                 reviews_sample_coro = aget_product_reviews(pid, limit=50, retry=1, max_pages=2)
                 details, summary, reviews_sample = await asyncio.gather(details_coro, summary_coro, reviews_sample_coro)
-                if not details:
+                if not details or not isinstance(details, dict):
                     return None
 
                 # Breadcrumbs -> category chain
@@ -1061,7 +1070,7 @@ def search_and_crawl_tiki_products_fast(db: Session, keyword: str, limit: int = 
             def _thread_job() -> List[Dict[str, Any]]:
                 local_db = SessionLocal()
                 try:
-                    return asyncio.run(_runner(local_db))
+                    return _run_coro_blocking(_runner(local_db))
                 finally:
                     local_db.close()
 
@@ -1072,19 +1081,12 @@ def search_and_crawl_tiki_products_fast(db: Session, keyword: str, limit: int = 
         # No running loop in this thread; fall through to direct execution.
         pass
 
-    return asyncio.run(_runner(db))
+    return _run_coro_safely(_runner(db))
 
 
 # Override earlier definition with async-powered implementation
 def update_sentiment_from_tiki_reviews(db: Session, product_id: int) -> Optional[float]:
-    try:
-        comments = asyncio.run(aget_product_reviews(product_id, limit=20))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            comments = loop.run_until_complete(aget_product_reviews(product_id, limit=20))
-        finally:
-            loop.close()
+    comments = _run_coro_safely(aget_product_reviews(product_id, limit=20))
 
     if not comments:
         product_crud.update_sentiment(db, product_id, score=None, label=None)
@@ -1107,14 +1109,7 @@ def get_product_reviews(
     limit: int = 20,
     retry: int = 2,
 ) -> List[str]:
-    try:
-        return asyncio.run(aget_product_reviews(product_id, limit=limit, retry=retry))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(aget_product_reviews(product_id, limit=limit, retry=retry))
-        finally:
-            loop.close()
+    return _run_coro_safely(aget_product_reviews(product_id, limit=limit, retry=retry))
 
 
 def update_sentiment_with_comments(db: Session, product_id: int, comments: List[str]) -> Optional[float]:
@@ -1134,11 +1129,4 @@ def update_sentiment_with_comments(db: Session, product_id: int, comments: List[
 
 # Override get_tiki_ids to async wrapper to remove requests dependency
 def get_tiki_ids(keyword: str, page: int = 1, limit: int = 10) -> List[int]:
-    try:
-        return asyncio.run(aget_tiki_ids(keyword, page=page, limit=limit))
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(aget_tiki_ids(keyword, page=page, limit=limit))
-        finally:
-            loop.close()
+    return _run_coro_safely(aget_tiki_ids(keyword, page=page, limit=limit))

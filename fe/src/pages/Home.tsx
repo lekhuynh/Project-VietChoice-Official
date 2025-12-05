@@ -6,7 +6,7 @@ const quickActions = [
   { title: 'Kiểm tra nguồn gốc', desc: 'Quét mã vạch hoặc nhập tên', icon: ShieldCheck },
   { title: 'Sản phẩm tốt nhất', desc: 'Gợi ý độ tin cậy cao trên thị trường', icon: Star },
   { title: 'Đánh giá nhanh', desc: 'Tóm tắt review từ người dùng thật', icon: AlertTriangle },
-  { title: 'Hướng dẫn quét mã', desc: 'Cách dùng camera để tra cứu', icon: Scan },
+  { title: 'Quét mã sản phẩm', desc: 'Dùng camera để tra cứu sản phẩm', icon: Scan },
 ];
 
 const Home = () => {
@@ -16,12 +16,12 @@ const Home = () => {
         {/* Hero */}
         <div className="text-center space-y-3 mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
-            AI Assistant · Sẵn sàng hỗ trợ
+            Tìm kiếm thông minh · Sẵn sàng hỗ trợ
           </div>
           <h1 className="text-3xl md:text-5xl font-bold tracking-tight">
             Trợ lý mua sắm <span className="text-emerald-600">VietChoice</span>
           </h1>
-          <p className="text-lg text-slate-600">So sánh giá từ nhiều nguồn, kiểm tra minh bạch và cảnh báo rủi ro.</p>
+          <p className="text-lg text-slate-600">Đánh giá chất lượng, kiểm tra minh bạch và cảnh báo rủi ro.</p>
         </div>
 
         {/* Chat card */}

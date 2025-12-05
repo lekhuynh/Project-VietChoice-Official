@@ -5,7 +5,6 @@ import tempfile
 from app.models.products import Products
 from app.models.categories import Categories
 import math
-from ..services.risk_service import evaluate_risk
 from ..database import get_db
 from ..services import crawler_tiki_service as tiki
 from ..services import barcode_service
@@ -16,9 +15,19 @@ from ..services.search_history_service import save_search_history
 from ..services.view_history_service import add_view_history
 from ..services.chat_intent_service import parse_search_intent
 from ..services.product_service import search_products_service
+from ..tasks.crawler import enqueue_crawl_keyword, enqueue_crawl_barcode, enqueue_scan_image, enqueue_scan_barcode_image
+from ..cache import get_json, set_json
 from typing import Optional, List, Dict
 
+
+
+# Job status helper
+from ..tasks.job_status import get_job_status
 router = APIRouter(prefix="/products", tags=["Products"])
+
+@router.get("/jobs/{job_id}")
+def job_status(job_id: str):
+    return get_job_status(job_id)
 
 
 # ============================================================
@@ -26,55 +35,39 @@ router = APIRouter(prefix="/products", tags=["Products"])
 #============================================================
 @router.get("/search")
 async def search_product(
-    q: str, 
-    db: Session = Depends(get_db), 
+    q: str,
+    db: Session = Depends(get_db),
     current_user=Depends(get_optional_user)
 ):
-    # 1. Gọi Gemini phân tích
+    # 1. G?i Gemini ph?n t?ch
     intent = await parse_search_intent(q)
 
-    # 2. CHECK Ý ĐỊNH: Nếu AI bảo đây là chat -> Dừng ngay, không cào dữ liệu
+    # 2. N?u AI b?o ??y l? chat -> kh?ng c?o
     if intent.get("is_searching") is False:
-        print(f"🛑 [Stop Crawl] Chat detected: '{q}'")
+        print(f"[Stop Crawl] Chat detected: '{q}'")
         return {
-            "input_type": "chat", # Frontend dựa vào đây để hiển thị bong bóng chat
+            "input_type": "chat",
             "query": q,
             "count": 0,
             "results": [],
-            "ai_message": intent.get("message") # "Mình là AI bán hàng..."
+            "ai_message": intent.get("message"),
         }
 
-    # 3. Nếu là tìm kiếm -> Tiếp tục quy trình cũ
-    refined_query = intent.get("product_name")
-    print(f"✅ [Searching] '{q}' -> Keyword: '{refined_query}'")
-    
-    results = tiki.crawl_by_text(db, refined_query)
+    # 3. Enqueue crawler thay v? ch?y tr?c ti?p
+    refined_query = intent.get("product_name") or q
+    print(f"[Search] '{q}' -> enqueue crawl for keyword: '{refined_query}'")
 
-    # Sắp xếp theo AI score tương tự score_expr ở CRUD
-    def ai_score(p: dict) -> float:
-        try:
-            return (
-                float(p.get("Sentiment_Score") or 0) * 0.4
-                + float(p.get("Avg_Rating") or 0) * 0.3
-                + math.log((p.get("Review_Count") or 0) + 1) * 0.2
-                + float(p.get("Positive_Percent") or 0) * 0.1
-            )
-        except Exception:
-            return 0.0
-
-    if isinstance(results, list):
-        results = sorted(results, key=ai_score, reverse=True)
-    
-    if results:
-        save_search_history(db, current_user, query=q, results=results)
+    job_id = enqueue_crawl_keyword(refined_query)
 
     return {
-        "input_type": "product_search", # Frontend hiển thị danh sách sản phẩm
+        "input_type": "product_search",
         "query": q,
         "refined_query": refined_query,
-        "count": len(results),
-        "results": results,
-        "ai_message": None
+        "count": 0,
+        "results": [],
+        "ai_message": None,
+        "job_id": job_id,
+        "status": "queued",
     }
 
 def _serialize_product(product: Products) -> dict:
@@ -121,9 +114,17 @@ def search_product_local(
 ):
     keyword = (q or "").strip()
     if not keyword:
-        raise HTTPException(status_code=400, detail="Thiếu từ khóa tìm kiếm")
+        raise HTTPException(status_code=400, detail="Thi?u t? kh?a t?m ki?m")
 
-    # GỌI SERVICE — CHUẨN
+    cache_key = (
+        f"cache:search_local:{keyword}:{limit}:{skip}:"
+        f"{lv1}:{lv2}:{lv3}:{lv4}:{lv5}:{min_price}:{max_price}:{brand}:"
+        f"{min_rating}:{sort}:{is_vietnam_origin}:{is_vietnam_brand}:{positive_over}"
+    )
+    cached = get_json(cache_key)
+    if cached:
+        return cached
+
     items, total = search_products_service(
         db=db,
         keyword=keyword,
@@ -145,7 +146,7 @@ def search_product_local(
     if results:
         save_search_history(db, current_user, query=q, results=results)
 
-    return {
+    payload = {
         "input_type": "local_product_search",
         "query": q,
         "refined_query": keyword,
@@ -155,6 +156,8 @@ def search_product_local(
         "count": len(results),
         "results": results
     }
+    set_json(cache_key, payload, ttl_seconds=600)
+    return payload
 
 # ============================================================
 # 2️⃣ TRA CỨU SẢN PHẨM THEO MÃ VẠCH (BARCODE)
@@ -162,23 +165,23 @@ def search_product_local(
 @router.get("/barcode/{barcode}")
 def lookup_by_barcode(barcode: str, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """
-    Tra cứu sản phẩm qua mã vạch.
-    - Gọi iCheck để lấy tên sản phẩm.
-    - Nếu không có → fallback sang Tiki.
+    Tra c?u s?n ph?m qua m? v?ch.
+    Thay v? c?o tr?c ti?p, enqueue v?o queue ?? worker x? l?.
     """
     if not barcode:
-        raise HTTPException(status_code=400, detail="Thiếu mã vạch")
+        raise HTTPException(status_code=400, detail="Thi?u m? v?ch")
 
-    results = tiki.crawl_by_barcode(db, barcode)
-    if not results:
-        raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm cho mã vạch này")
-    save_search_history(db, current_user, query=barcode, results=results)
+    job_id = enqueue_crawl_barcode(barcode)
     return {
         "input_type": "barcode",
         "query": barcode,
-        "count": len(results),
-        "results": results
+        "count": 0,
+        "results": [],
+        "job_id": job_id,
+        "status": "queued",
     }
+
+
 
 
 # ============================================================
@@ -187,29 +190,21 @@ def lookup_by_barcode(barcode: str, db: Session = Depends(get_db), current_user=
 @router.post("/scan/image")
 async def scan_product_image(file: UploadFile = File(...), db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """
-    Quét ảnh sản phẩm:
-    - Lưu ảnh tạm.
-    - Dùng OCR đọc chữ.
-    - Tìm sản phẩm tương ứng trên Tiki.
+    Qu?t ?nh s?n ph?m -> enqueue job ?? OCR/crawl trong worker.
     """
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[-1]) as tmp:
         tmp.write(await file.read())
         tmp_path = tmp.name
 
-    try:
-        results = tiki.crawl_by_image(db, tmp_path)
-        if not results:
-            raise HTTPException(status_code=404, detail="Không nhận diện được hoặc không tìm thấy sản phẩm")
-        save_search_history(db, current_user, query=file.filename, results=results)
-        return {
-            "input_type": "image",
-            "query": file.filename,
-            "count": len(results),
-            "results": results
-        }
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+    job_id = enqueue_scan_image(tmp_path, filename=file.filename)
+    return {
+        "input_type": "image",
+        "query": file.filename,
+        "count": 0,
+        "results": [],
+        "job_id": job_id,
+        "status": "queued",
+    }
 
 # ============================================================
 # 3b️⃣ QUÉT MÃ VẠCH TỪ ẢNH (pyzbar)
@@ -221,33 +216,22 @@ async def scan_barcode_image(
     current_user=Depends(get_optional_user)
 ):
     """
-    Nhận ảnh, dùng pyzbar để nhận diện mã vạch, sau đó tra cứu sản phẩm theo mã đầu tiên.
-    Trả về danh sách mã tìm được và kết quả sản phẩm (nếu có).
+    Nh?n ?nh, decode barcode, enqueue crawler theo m? t?t nh?t.
     """
-    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename or "")[ -1] or ".png") as tmp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename or "")[-1] or ".png") as tmp:
         tmp.write(await file.read())
         tmp_path = tmp.name
 
-    try:
-        codes = barcode_service.decode_barcodes(tmp_path)
-        if not codes:
-            raise HTTPException(status_code=404, detail="Không nhận diện được mã vạch trong ảnh.")
+    job_id = enqueue_scan_barcode_image(tmp_path)
+    return {
+        "input_type": "barcode_image",
+        "query": file.filename,
+        "count": 0,
+        "results": [],
+        "job_id": job_id,
+        "status": "queued",
+    }
 
-        # Tra cứu theo mã đầu tiên
-        primary = codes[0]
-        results = tiki.crawl_by_barcode(db, primary) or []
-        if results:
-            save_search_history(db, current_user, query=primary, results=results)
-        return {
-            "input_type": "barcode_image",
-            "codes": codes,
-            "best_code": primary,
-            "count": len(results),
-            "results": results,
-        }
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
 # ============================================================
 # 4️⃣ LẤY SẢN PHẨM THEO DANH MỤC VÀ BỘ LỌC
 # ============================================================
@@ -304,6 +288,12 @@ def get_product_detail(product_id: int, db: Session = Depends(get_db), current_u
     """
     Lấy thông tin chi tiết sản phẩm đã lưu trong DB (không cần crawler).
     """
+    cache_key = f"cache:product:{product_id}"
+    cached = get_json(cache_key)
+    if cached:
+        add_view_history(db, current_user, product_id)
+        return cached
+
     product = product_crud.get_by_id(db, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm trong DB")
@@ -329,6 +319,7 @@ def get_product_detail(product_id: int, db: Session = Depends(get_db), current_u
         "Source": product.Source,
         "Image_Full_URL": product.Image_Full_URL,
     }
+    set_json(cache_key, data, ttl_seconds=600)
     return data
 
 # ============================================================
@@ -338,18 +329,14 @@ def get_product_detail(product_id: int, db: Session = Depends(get_db), current_u
 def update_sentiment(product_id: int, db: Session = Depends(get_db)):
     product = product_crud.get_by_id(db, product_id)
     if not product:
-        raise HTTPException(404, "Không tìm thấy sản phẩm trong DB")
+        raise HTTPException(404, "Kh?ng t?m th?y s?n ph?m trong DB")
     if product.Source != "Tiki" or not product.External_ID:
-        raise HTTPException(400, "Sản phẩm này không phải từ Tiki hoặc thiếu External_ID")
+        raise HTTPException(400, "S?n ph?m n?y kh?ng ph?i t? Tiki ho?c thi?u External_ID")
 
-    score = tiki.update_sentiment_from_tiki_reviews(db, int(product.External_ID))
-    if score is None:
-        return {
-            "product_id": product_id,
-            "external_id": product.External_ID,
-            "message": "Sản phẩm chưa có review trên Tiki nên không phân tích được."
-        }
-    return {"product_id": product_id, "external_id": product.External_ID, "sentiment_score": score}
+    from ..tasks.sentiment import enqueue_update_sentiment
+
+    job_id = enqueue_update_sentiment(product_id)
+    return {"product_id": product_id, "external_id": product.External_ID, "job_id": job_id, "status": "queued"}
 
 
 # =========================================================
@@ -358,16 +345,12 @@ def update_sentiment(product_id: int, db: Session = Depends(get_db)):
 @router.put("/update_all_sentiment")
 def update_all_sentiment(db: Session = Depends(get_db)):
     """
-    Cập nhật cảm xúc cho toàn bộ sản phẩm có Source='Tiki'.
-    Dùng khi chạy cron 12h/lần hoặc cập nhật batch.
+    Enqueue sentiment update cho to?n b? s?n ph?m Tiki.
     """
     products = product_crud.get_all_tiki_products(db)
-    updated = 0
-    for p in products:
-        score = tiki.update_sentiment_from_tiki_reviews(db, int(p.External_ID))
-        if score:
-            updated += 1
-    return {"total": len(products), "updated": updated}
+    from ..tasks.sentiment import enqueue_update_sentiment
+    job_ids = [enqueue_update_sentiment(p.Product_ID) for p in products]
+    return {"total": len(products), "job_ids": job_ids, "status": "queued"}
 
 
 # =========================================================
@@ -392,30 +375,29 @@ def delete_products(product_id: int, db: Session = Depends(get_db)):
 @router.get("/recommend/best/{product_id}")
 def recommend_best_products(product_id: int, limit: int = 5, db: Session = Depends(get_db)):
     """
-    Gợi ý sản phẩm tốt nhất cùng danh mục, ưu tiên:
-    - Sentiment_Score cao nhất
-    - Avg_Rating cao nhất
-    - Review_Count nhiều nhất
+    G?i ? s?n ph?m t?t nh?t c?ng danh m?c (?u ti?n sentiment/rating/review).
     """
     from ..services.recommender_service import recommend_best_in_category
 
-    products = recommend_best_in_category(db, product_id, limit)
-    if not products:
-        raise HTTPException(404, "Không tìm thấy sản phẩm gợi ý phù hợp.")
-    return products
+    cache_key = f"cache:recommend:{product_id}:{limit}"
+    cached = get_json(cache_key)
+    if cached:
+        return cached
+
+    try:
+        products = recommend_best_in_category(db, product_id, limit) or []
+    except Exception:
+        products = []
+
+    # Serialize ra dict để FE luôn nhận đủ field và tránh object không JSON-serializable
+    serialized = [_serialize_product(p) for p in products]
+
+    set_json(cache_key, serialized, ttl_seconds=3600)
+    return serialized
 
 @router.get("/{product_id}/risk")
 def get_product_risk(product_id: int, db: Session = Depends(get_db)):
-    product = db.query(Products).filter(Products.Product_ID == product_id).first()
+    from ..tasks.risk import enqueue_risk_score
 
-    if not product:
-        return {"detail": "Product not found"}
-
-    risk = evaluate_risk(product, db)
-
-    return {
-        "Product_ID": product_id,
-        "Risk_Score": risk["risk_score"],
-        "Risk_Level": risk["risk_level"],
-        "Reasons": risk["reasons"]
-    }
+    job_id = enqueue_risk_score(product_id)
+    return {"product_id": product_id, "job_id": job_id, "status": "queued"}

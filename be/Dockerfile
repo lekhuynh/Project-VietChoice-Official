@@ -2,13 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# HuggingFace Cache
+# ============================================
+# HuggingFace Cache (bắt buộc phải có)
+# ============================================
 ENV HF_HOME=/app/hf_cache
+ENV SENTENCE_TRANSFORMERS_HOME=/app/hf_cache
 RUN mkdir -p /app/hf_cache
 
-# ==============================
+# ============================================
 # System deps
-# ==============================
+# ============================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -27,9 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# ==============================
+# ============================================
 # Microsoft repo
-# ==============================
+# ============================================
 RUN mkdir -p /etc/apt/keyrings
 RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
     | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg
@@ -44,28 +47,31 @@ RUN apt-get update && ACCEPT_EULA=Y apt-get install -y --no-install-recommends \
 
 ENV PATH="/opt/mssql-tools18/bin:${PATH}"
 
-# ==============================
+# ============================================
 # Python deps
-# ==============================
+# ============================================
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# ==============================
-# Pre-download HuggingFace model
-# ==============================
 RUN python3 - <<EOF
 from sentence_transformers import SentenceTransformer
-print("Downloading model...")
-SentenceTransformer("dangvantuan/vietnamese-embedding")
+print("Downloading model (pinned revision)...")
+SentenceTransformer(
+    "dangvantuan/vietnamese-document-embedding",
+    revision="6fa4e2f",
+    trust_remote_code=True,
+    cache_folder="/app/hf_cache"
+)
 print("Done.")
 EOF
 
-# ==============================
+
+# ============================================
 # Copy source code
-# ==============================
+# ============================================
 COPY . .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port",  "8000"]

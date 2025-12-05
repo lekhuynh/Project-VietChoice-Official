@@ -28,7 +28,12 @@ def extract_text_from_image(image_path: str) -> str:
         from PIL import Image
 
         # ⚙️ Cấu hình Tesseract trên Windows (chỉ cần nếu chưa set env)
-        pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        import platform
+
+        # Chỉ set đường dẫn trên Windows
+        if platform.system() == "Windows":
+            pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
 
         # 1️⃣ Tiền xử lý ảnh
         img = preprocess_image(image_path)

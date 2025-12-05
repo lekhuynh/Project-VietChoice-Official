@@ -9,6 +9,7 @@ from . import (
     search_history_products,  # noqa: F401
     favorites,  # noqa: F401
     user_reviews,  # noqa: F401
+    product_view,  # noqa: F401
 )
 
 __all__ = [

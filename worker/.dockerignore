@@ -1,0 +1,32 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Venv local
+venv/
+*.sqlite3
+*.db
+
+# Node modules / FE build
+node_modules/
+dist/
+build/
+
+# Logs + temp
+*.log
+cache/
+logs/
+
+# Dataset
+raw_data/
+data/
+
+# HF cache local
+.hf_cache/
+
+# Git
+.git/
+.github/
+
+# Local env files
+.env

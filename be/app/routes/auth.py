@@ -43,9 +43,10 @@ def login(credentials: LoginRequest, response: Response, db: Session = Depends(g
         value=access_token,
         max_age=int(expires_delta.total_seconds()),
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite="none",
+        secure=True,
     )
+
 
     return TokenResponse(access_token=access_token)
 
@@ -55,5 +56,11 @@ def logout(response: Response, current_user=Depends(get_optional_user)) -> dict[
     if not current_user:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    response.delete_cookie(settings.ACCESS_TOKEN_COOKIE_NAME, samesite="lax")
+    response.delete_cookie(
+        key=settings.ACCESS_TOKEN_COOKIE_NAME,
+        httponly=True,
+        samesite="none",
+        secure=True,
+    )
+
     return {"detail": "Logged out"}

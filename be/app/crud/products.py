@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from sqlalchemy.exc import IntegrityError
 
 from ..models.products import Products
 from app.models.categories import Categories
@@ -66,11 +67,14 @@ def get_top_rated_products(db: Session, limit: int = 10) -> Sequence[Products]:
     )
 
 def create_or_update_by_external_id(db: Session, data: dict):
+    source = data.get("Source", "Tiki")
+    external_id = data.get("External_ID")
+
     existing = (
         db.query(Products)
         .filter(
-            Products.External_ID == data.get("External_ID"),
-            Products.Source == data.get("Source", "Tiki"),
+            Products.External_ID == external_id,
+            Products.Source == source,
         )
         .first()
     )
@@ -80,16 +84,42 @@ def create_or_update_by_external_id(db: Session, data: dict):
         for key, value in data.items():
             if hasattr(existing, key):
                 setattr(existing, key, value)
-        db.commit()
-        db.refresh(existing)
-        return existing
+        try:
+            db.commit()
+            db.refresh(existing)
+            return existing
+        except IntegrityError:
+            db.rollback()
+            refreshed = (
+                db.query(Products)
+                .filter(Products.External_ID == external_id, Products.Source == source)
+                .first()
+            )
+            return refreshed or existing
 
     # ✅ Nếu chưa có, tạo mới
     new_product = Products(**{k: v for k, v in data.items() if hasattr(Products, k)})
     db.add(new_product)
-    db.commit()
-    db.refresh(new_product)
-    return new_product
+    try:
+        db.commit()
+        db.refresh(new_product)
+        return new_product
+    except IntegrityError:
+        # Another worker may have inserted the same External_ID+Source concurrently.
+        db.rollback()
+        existing = (
+            db.query(Products)
+            .filter(Products.External_ID == external_id, Products.Source == source)
+            .first()
+        )
+        if existing:
+            for key, value in data.items():
+                if hasattr(existing, key):
+                    setattr(existing, key, value)
+            db.commit()
+            db.refresh(existing)
+            return existing
+        raise
 
 
 def update_sentiment(db: Session, external_id: int, score: Optional[float], label: Optional[str]):

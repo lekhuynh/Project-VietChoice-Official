@@ -1,54 +1,45 @@
 from __future__ import annotations
 
 from typing import Iterable, List, Optional
-
 import numpy as np
 import torch
+from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.orm import Session
 
 from ..models.user_reviews import User_Reviews
 from ..models.products import Products
 from ..services.product_service import update_sentiment_score_and_label
 
-# ------------------------------------------------------------------
-# HuggingFace SentenceTransformer (optional). Fallback to heuristic
-# if the model or dependencies aren't available.
-# ------------------------------------------------------------------
+# ==========================================================
+# Model config
+# ==========================================================
 _MODEL = None
 _POS_EMBS = None
 _NEG_EMBS = None
 _MODEL_NAME = "dangvantuan/vietnamese-document-embedding"
+_MODEL_REVISION = "6fa4e2f"
 _DEVICE = "cpu"
 
+# ==========================================================
+# Anchors (tối ưu – rút gọn – giảm lệch)
+# ==========================================================
 _POSITIVE_ANCHORS = [
-    "rất tốt", "tuyệt vời", "quá tuyệt", "ưng ý", "hài lòng",
-    "rất hài lòng", "đáng mua", "đáng tiền", "đáng trải nghiệm",
-    "chất lượng", "chất lượng tốt", "xịn", "xịn sò", "siêu xịn",
-    "siêu ngon", "tốt như mô tả", "đúng mô tả", "chuẩn mô tả",
-    "đẹp", "cực đẹp", "giao nhanh", "đóng gói đẹp", "đóng gói kĩ",
-    "uy tín", "shop uy tín", "sản phẩm tuyệt vời", "rất ok",
-    "ổn áp", "giá tốt", "giá hợp lý", "phù hợp", "xài thích",
-    "hoạt động tốt", "bền", "êm", "tốt hơn mong đợi",
-    "rất đáng mua", "nên mua", "mua lại lần nữa",
-    "shop hỗ trợ tốt", "thái độ tốt", "nhiệt tình",
+    "rất tốt", "tuyệt vời", "ưng ý", "hài lòng",
+    "chất lượng tốt", "đáng mua", "đúng mô tả",
+    "giao nhanh", "đẹp", "uy tín",
 ]
 
 _NEGATIVE_ANCHORS = [
-    "tệ", "quá tệ", "kém", "kém chất lượng", "rất tệ",
-    "thất vọng", "cực kỳ thất vọng", "không đáng tiền",
-    "không giống mô tả", "sai mô tả", "lừa đảo", "hàng giả",
-    "hàng nhái", "fake", "không như hình", "không như mô tả",
-    "đóng gói tệ", "giao hàng chậm", "rất chậm", "bị lỗi",
-    "hỏng", "không dùng được", "không hoạt động", "vỡ",
-    "rách", "bẩn", "xấu", "đồ rác", "không phù hợp",
-    "shop tệ", "dịch vụ tệ", "thái độ tệ", "chất lượng quá kém",
-    "đừng mua", "đừng nên mua", "nên tránh", "không đáng",
+    "tệ", "rất tệ", "kém chất lượng", "thất vọng",
+    "fake", "hàng nhái", "lừa đảo", "sai mô tả",
+    "bị lỗi", "không dùng được",
 ]
 
 
-
+# ==========================================================
+# Device selection
+# ==========================================================
 def _select_device() -> str:
-    """Pick best available device: CUDA > MPS > CPU."""
     try:
         if torch.cuda.is_available():
             return "cuda"
@@ -59,140 +50,130 @@ def _select_device() -> str:
     return "cpu"
 
 
+# ==========================================================
+# Load embedding model
+# ==========================================================
 def _load_model():
     global _MODEL, _DEVICE
     if _MODEL is not None:
         return _MODEL
     try:
-        from sentence_transformers import SentenceTransformer  # type: ignore
-
+        from sentence_transformers import SentenceTransformer
         _DEVICE = _select_device()
-        _MODEL = SentenceTransformer(_MODEL_NAME, trust_remote_code=True, device=_DEVICE)
-        try:
-            _MODEL.to(_DEVICE)  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        _MODEL = SentenceTransformer(
+            _MODEL_NAME,
+            revision=_MODEL_REVISION,
+            trust_remote_code=True,
+            device=_DEVICE,
+            cache_folder="/app/hf_cache"
+        )
     except Exception:
         _MODEL = None
         _DEVICE = "cpu"
     return _MODEL
 
 
+# ==========================================================
+# Encode anchors
+# ==========================================================
 def _ensure_anchor_embeddings():
     global _POS_EMBS, _NEG_EMBS
     if _POS_EMBS is not None and _NEG_EMBS is not None:
         return _POS_EMBS, _NEG_EMBS
+
     model = _load_model()
     if model is None:
         return None, None
-    pos = model.encode(_POSITIVE_ANCHORS, convert_to_tensor=True, normalize_embeddings=True)
-    neg = model.encode(_NEGATIVE_ANCHORS, convert_to_tensor=True, normalize_embeddings=True)
-    try:
-        pos = pos.to(_DEVICE)
-        neg = neg.to(_DEVICE)
-    except Exception:
-        pass
-    _POS_EMBS, _NEG_EMBS = pos, neg
+
+    pos = model.encode(_POSITIVE_ANCHORS, normalize_embeddings=True)
+    neg = model.encode(_NEGATIVE_ANCHORS, normalize_embeddings=True)
+
+    _POS_EMBS = np.array(pos)
+    _NEG_EMBS = np.array(neg)
+
     return _POS_EMBS, _NEG_EMBS
 
-def _compute_score(pos_mean, neg_mean):
-    # softmax-style normalization
-    numerator = pos_mean - neg_mean
-    denominator = abs(pos_mean) + abs(neg_mean) + 1e-6
-    score = numerator / denominator
 
-    return float(max(-1.0, min(1.0, score)))
+# ==========================================================
+# Compute score (tối ưu – không âm oan)
+# ==========================================================
+def _compute_score(pos_mean: float, neg_mean: float) -> float:
+    raw = pos_mean - neg_mean
+    score = np.tanh(raw * 1.5)   # scale cực đẹp [-1,1]
+    return float(score)
 
 
+# ==========================================================
+# Score using model
+# ==========================================================
 def _score_with_model(texts: List[str]) -> Optional[List[float]]:
     model = _load_model()
-    pos, neg = _ensure_anchor_embeddings()
-    if model is None or pos is None or neg is None:
+    pos_embs, neg_embs = _ensure_anchor_embeddings()
+    if model is None or pos_embs is None or neg_embs is None:
         return None
 
-    arr = model.encode(texts, convert_to_tensor=True, normalize_embeddings=True)
-    try:
-        arr = arr.to(_DEVICE)
-    except Exception:
-        pass
+    # Encode text
+    arr = model.encode(texts, normalize_embeddings=True)
+    arr = np.array(arr)
 
-    # cosine similarity
-    pos_sim = arr @ pos.T  # (n_texts, n_pos)
-    neg_sim = arr @ neg.T  # (n_texts, n_neg)
+    # Cosine similarity chuẩn
+    pos_sim = cosine_similarity(arr, pos_embs).mean(axis=1)
+    neg_sim = cosine_similarity(arr, neg_embs).mean(axis=1)
 
-    pos_mean = pos_sim.mean(dim=1)
-    neg_mean = neg_sim.mean(dim=1)
-
-    scores = []
-    for p, n in zip(pos_mean, neg_mean):
-        scores.append(_compute_score(float(p), float(n)))
-
+    scores = [_compute_score(float(p), float(n)) for p, n in zip(pos_sim, neg_sim)]
     return scores
 
 
+# ==========================================================
+# Analyze comment
+# ==========================================================
 def analyze_comment(text: str) -> float:
-    """Analyze sentiment using embedding model if available, else heuristic.
-
-    Returns score in [-1, 1].
-    """
     if not text:
         return 0.0
     scores = _score_with_model([text])
     if scores is not None:
         return float(scores[0])
 
-    # Heuristic fallback (no model available)
+    # fallback heuristic
     t = text.lower()
-    positives = [
-    "tốt", "rất tốt", "tuyệt", "tuyệt vời", "ưng", "ưng ý",
-    "hài lòng", "ok", "ổn", "ổn áp", "chất lượng", "đẹp",
-    "đáng mua", "đáng tiền", "giao nhanh", "uy tín"]
-    negatives = [
-    "tệ", "quá tệ", "kém", "xấu", "thất vọng", "lỗi", "hỏng",
-    "không đáng", "không giống", "không như", "fake", "nhái",
-    "lừa đảo", "slow", "chậm", "bẩn", "rách", "vỡ"]
+    positives = ["tốt", "tuyệt", "ưng", "hài lòng", "đáng mua", "đúng mô tả"]
+    negatives = ["tệ", "kém", "thất vọng", "fake", "nhái", "lừa đảo"]
+
     score = 0
-    for w in positives:
-        if w in t:
-            score += 1
-    for w in negatives:
-        if w in t:
-            score -= 1
+    score += sum(1 for w in positives if w in t)
+    score -= sum(1 for w in negatives if w in t)
+
     return max(-1.0, min(1.0, score / 3.0))
 
 
+# ==========================================================
+# Sentiment label
+# ==========================================================
 def label_sentiment(score: float) -> str:
-    """Return normalized labels used across the app and analytics."""
-    if score >= 0.6:
+    if score >= 0.4:
         return "positive"
-    if score >= 0.2:
+    if score >= -0.1:
         return "neutral"
     return "negative"
 
 
+# ==========================================================
+# Collect comments
+# ==========================================================
 def _collect_comments_for_product(db: Session, product: Products) -> List[str]:
-    """Collect comments from User_Reviews and/or Tiki based on availability.
-
-    Rule:
-    - If External_ID is missing: only use User_Reviews.
-    - If External_ID exists:
-        - If product has user reviews: combine both sources (user + Tiki).
-        - If no user reviews: use only Tiki reviews.
-    """
     comments: List[str] = []
 
-    # Fetch user reviews (comments)
     user_reviews: List[User_Reviews] = (
         db.query(User_Reviews)
         .filter(User_Reviews.Product_ID == product.Product_ID)
         .all()
     )
-    user_texts = [(r.Comment or "").strip() for r in user_reviews if (r.Comment or "").strip()]
+    user_texts = [(r.Comment or "").strip() for r in user_reviews if r.Comment]
 
     if product.External_ID is None:
-        return user_texts  # only source available
+        return user_texts
+
     from .crawler_tiki_service import get_product_reviews
-    # External_ID exists → consider Tiki
     tiki_texts: List[str] = get_product_reviews(int(product.External_ID)) or []
 
     if user_texts:
@@ -204,8 +185,10 @@ def _collect_comments_for_product(db: Session, product: Products) -> List[str]:
     return comments
 
 
+# ==========================================================
+# UPDATE PRODUCT SENTIMENT
+# ==========================================================
 def update_product_sentiment(db: Session, product_id: int) -> Optional[float]:
-    """Compute sentiment score from reviews (user + Tiki per rule) and update product."""
     product: Optional[Products] = (
         db.query(Products).filter(Products.Product_ID == product_id).first()
     )
@@ -215,39 +198,32 @@ def update_product_sentiment(db: Session, product_id: int) -> Optional[float]:
     comments = _collect_comments_for_product(db, product)
     comments = [c for c in comments if c]
 
-    # If no text comments at all, optionally fallback to user ratings
     if not comments:
-        user_reviews: List[User_Reviews] = (
+        user_reviews = (
             db.query(User_Reviews)
             .filter(User_Reviews.Product_ID == product_id)
             .all()
         )
         if not user_reviews:
-            update_sentiment_score_and_label(db, product_id, score=None, label=None)
+            update_sentiment_score_and_label(db, product_id, None, None)
             return None
-        scores: List[float] = []
+
+        scores = []
         for r in user_reviews:
             rating = (r.Rating or 0)
-            # map 1..5 to [-1..1]
             s = (max(1, min(5, rating)) - 3) / 2.0
             scores.append(s)
-        avg = sum(scores) / len(scores) if scores else 0.0
+
+        avg = sum(scores) / len(scores)
         label = label_sentiment(avg)
-        update_sentiment_score_and_label(db, product_id, score=avg, label=label)
+        update_sentiment_score_and_label(db, product_id, avg, label)
         return avg
 
-    # Analyze text comments with model if available
     scores = _score_with_model(comments)
     if scores is None:
         scores = [analyze_comment(t) for t in comments]
 
-    if not scores:
-        update_sentiment_score_and_label(db, product_id, score=None, label=None)
-        return None
-    avg = sum(scores) / len(scores)
+    avg = float(np.mean(scores))
     label = label_sentiment(avg)
-    update_sentiment_score_and_label(db, product_id, score=avg, label=label)
+    update_sentiment_score_and_label(db, product_id, avg, label)
     return avg
-
-
-

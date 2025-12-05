@@ -9,8 +9,9 @@ SQLALCHEMY_DATABASE_URL = settings.SQLSERVER_URL
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args={"fast_executemany": True},
-    pool_size=5,
-    max_overflow=10,
+    # Tăng pool để chịu tải đọc đồng thời tốt hơn
+    pool_size=20,
+    max_overflow=30,
     pool_timeout=30,
     pool_recycle=1800,
     pool_pre_ping=True,

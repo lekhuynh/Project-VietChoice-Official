@@ -355,12 +355,6 @@ const ProductDetailPage: React.FC = () => {
               >
                 Xem trên trang gốc
               </a>
-              <button
-                type="button"
-                className="inline-flex items-center px-4 py-2 rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50"
-              >
-                <ShoppingCart className="h-4 w-4 mr-1" /> Thêm vào giỏ (giả lập)
-              </button>
             </div>
           )}
         </div>

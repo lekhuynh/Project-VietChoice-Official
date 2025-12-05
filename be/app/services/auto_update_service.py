@@ -113,9 +113,10 @@ def _process_product(product_id: int, external_id: int) -> Dict[str, Any]:
 def auto_update_products(
     db: Session,
     *,
-    older_than_hours: int = 12,
-    limit: Optional[int] = None,
-    workers: int = 8,
+    older_than_hours: int = 24,
+    limit: Optional[int] = 50,
+    workers: int = 4,
+    only_external_ids: Optional[list[int]] = None,
 ) -> Dict[str, Any]:
 
     products = product_crud.get_tiki_products_older_than(db, hours=older_than_hours)

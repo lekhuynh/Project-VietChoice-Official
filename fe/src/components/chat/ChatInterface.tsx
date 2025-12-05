@@ -280,17 +280,17 @@ const ChatInterface = () => {
       </div>
 
       <div className="border-t border-gray-200 p-4 flex-shrink-0 bg-white">
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
           <button
             onClick={handleBarcodeScanner}
-            className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full"
+            className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full flex-shrink-0"
             title="Quét mã vạch"
           >
             <BarcodeIcon className="h-5 w-5" />
           </button>
           <button
             onClick={handleImageUpload}
-            className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full"
+            className="p-2 text-gray-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full flex-shrink-0"
             title="Tải hình ảnh"
           >
             <ImageIcon className="h-5 w-5" />
@@ -301,7 +301,7 @@ const ChatInterface = () => {
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Nhập tên sản phẩm bạn muốn tìm..."
-            className="flex-grow border border-gray-300 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="flex-1 min-w-0 w-full sm:w-auto border border-gray-300 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             ref={inputRef}
           />
           <button

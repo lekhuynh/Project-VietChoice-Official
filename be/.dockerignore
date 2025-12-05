@@ -1,17 +1,68 @@
-venv/
+# =============================
+# Python caches
+# =============================
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# =============================
+# Virtual environments
+# =============================
+venv/
+env/
+
+# =============================
+# Logs / Temp
+# =============================
 *.log
-.env
-*.db
-*.sqlite3
-cache/
-data/
 logs/
+cache/
+.cache/
+
+# =============================
+# Local data / weights
+# =============================
 raw_data/
+data/
+datasets/
 *.pt
 *.bin
-.git
-*.pyo
-/app/hf_cache/*
-node_modules
+
+# =============================
+# Database files (local only)
+# =============================
+*.db
+*.sqlite
+*.sqlite3
+
+# =============================
+# HF cache (local only)
+# =============================
+.hf_cache/
+.hfcache/
+
+# =============================
+# Node modules (if exists)
+# =============================
+node_modules/
+
+# =============================
+# Environment files
+# =============================
+.env
+
+# =============================
+# Git folders
+# =============================
+.git/
+.github/
+
+# =============================
+# FE folders (NOT needed in BE image)
+# =============================
+frontend/
+fe/
+dist/
+build/
+package-lock.json

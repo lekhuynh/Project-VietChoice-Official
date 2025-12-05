@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.services.auto_update_service import auto_update_products
+from app.tasks.auto_update import enqueue_auto_update
 from app.services.system_flag_service import (
     disable_auto_update,
     enable_auto_update,
@@ -235,13 +235,9 @@ def admin_auto_update_status(db: Session = Depends(get_db)):
 
 @router.post("/auto-update/run-now", dependencies=[Depends(require_admin)])
 def admin_run_auto_update_now(db: Session = Depends(get_db)):
-    stats = auto_update_products(
-        db,
-        older_than_hours=0,
-        limit=None,
-        workers=10,
-    )
-    return {"message": "Auto update executed manually.", "stats": stats}
+    from app.tasks.auto_update_batch import enqueue_auto_update_chunked
+    job_id = enqueue_auto_update_chunked(chunk_size=50, older_than_hours=24, workers=4)
+    return {"message": "Auto update chunked enqueued.", "job_id": job_id, "status": "queued"}
 
 
 # ---------------------------------------------------------------------

@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from sqlalchemy.exc import IntegrityError
+
 from sqlalchemy.orm import Session
 
 from ..crud import categories as cat_crud
@@ -21,4 +23,13 @@ def create_or_get_category(db: Session, source: str, category_data: Dict[str, An
     existing = cat_crud.get_by_source_path(db, source=data["Source"], category_path=data["Category_Path"])
     if existing:
         return existing
-    return cat_crud.create_category(db, data)
+    try:
+        return cat_crud.create_category(db, data)
+    except IntegrityError:
+        # Another worker may have inserted the same category concurrently.
+        db.rollback()
+        existing = cat_crud.get_by_source_path(db, source=data["Source"], category_path=data["Category_Path"])
+        if existing:
+            return existing
+        # If still not found, re-raise to surface the original issue.
+        raise
